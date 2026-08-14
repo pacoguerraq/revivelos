@@ -12,13 +12,13 @@ export const EJEMPLOS: Ejemplo[] = [
   {
     id: 1,
     titulo: 'Retrato familiar, años 60',
-    descripcion: 'Foto en blanco y negro con manchas de humedad. Restaurada y coloreada.',
+    descripcion: 'Foto con manchas de humedad. Restaurada y coloreada.',
     beforeSrc: '/ejemplos/1-antes.jpg',
     afterSrc: '/ejemplos/1-despues.jpg',
   },
   {
     id: 2,
-    titulo: 'Foto de boda, años 70',
+    titulo: 'Autorretrato, años 50',
     descripcion: 'Foto sepia con rasgaduras en los bordes. Reparada y con color natural.',
     beforeSrc: '/ejemplos/2-antes.jpg',
     afterSrc: '/ejemplos/2-despues.jpg',

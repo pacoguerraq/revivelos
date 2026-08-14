@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum JobType {
+  RESTORE
+  ANIMATE
+}
+
+// FREE = vista previa gratuita (modelo barato, baja resolución, marca de agua)
+// PAID = resultado de pago (modelo caro, resolución completa)
+enum JobTier {
+  FREE
+  PAID
+}
+
+enum CreditReason {
+  RESTORE
+  ANIMATE
+  FREE_PREVIEW
+  PURCHASE
+  REFUND
+}
+
+model User {
+  id        String   @id // = uid de la cookie httpOnly, no autogenerado
+  credits   Int      @default(0)
+  freeUsed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  jobs         Job[]
+  transactions CreditTransaction[]
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      JobStatus @default(PENDING)
+  type        JobType
+  tier        JobTier
+  inputUrl    String
+  outputUrl   String?
+  watermarked Boolean   @default(false)
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  transactions CreditTransaction[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model CreditTransaction {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delta     Int // negativo al consumir, positivo al comprar/reembolsar
+  reason    CreditReason
+  jobId     String?
+  job       Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  createdAt DateTime     @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}

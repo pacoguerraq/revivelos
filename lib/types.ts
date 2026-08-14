@@ -19,10 +19,4 @@ export interface CreditBalance {
   freeUsed: boolean
 }
 
-export interface StoredImage {
-  buffer: Uint8Array
-  mimeType: string
-  originalName: string
-}
-
 // Tipos de paquetes y costos viven en lib/pricing.ts

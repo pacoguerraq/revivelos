@@ -1,27 +1,26 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { jobsStore, imagesStore, creditsStore } from '@/lib/stores'
 import { getUserId } from '@/lib/cookies'
-import { RESTORE_COST, ANIMATE_COST } from '@/lib/pricing'
-import type { Job, JobType } from '@/lib/types'
+import { ensureUser, InsufficientCreditsError } from '@/lib/credits'
+import { createJobAndCharge, updateJobStatus } from '@/lib/jobs'
+import { storage } from '@/lib/storage'
+import type { JobType } from '@/lib/types'
 
 const MOCK_DELAY_PROCESSING_MS = 2_000
 const MOCK_DELAY_COMPLETE_MS = 11_000
 
-function simulateMockProcessing(jobId: string) {
+function simulateMockProcessing(jobId: string, inputUrl: string) {
   // pending → processing
   setTimeout(() => {
-    jobsStore.update(jobId, { status: 'processing' })
+    updateJobStatus(jobId, { status: 'PROCESSING' }).catch(() => {})
   }, MOCK_DELAY_PROCESSING_MS)
 
   // processing → completed
   // TODO: integrar fal.ai — reemplazar este bloque con webhook de fal.ai
   setTimeout(() => {
-    const job = jobsStore.get(jobId)
-    if (!job) return
-    jobsStore.update(jobId, {
-      status: 'completed',
-      outputUrl: job.inputUrl, // mock: misma imagen; el cliente aplica filtros CSS
-    })
+    updateJobStatus(jobId, {
+      status: 'COMPLETED',
+      outputUrl: inputUrl, // mock: misma imagen; el cliente aplica filtros CSS
+    }).catch(() => {})
   }, MOCK_DELAY_COMPLETE_MS)
 }
 
@@ -51,49 +50,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No se recibió ninguna foto' }, { status: 400 })
   }
 
-  // Verificar créditos
-  const balance = creditsStore.get(userId)
-  const isFreeRestore = type === 'restore' && !balance.freeUsed
-  const creditCost = type === 'animate' ? ANIMATE_COST : RESTORE_COST
+  await ensureUser(userId)
 
-  if (!isFreeRestore && balance.credits < creditCost) {
-    return NextResponse.json(
-      { error: 'No tienes suficientes créditos', code: 'INSUFFICIENT_CREDITS' },
-      { status: 402 },
-    )
-  }
-
-  const jobId = crypto.randomUUID()
   const imageBuffer = new Uint8Array(await photo.arrayBuffer())
+  const blobUrl = await storage.put(
+    `jobs/${userId}/${crypto.randomUUID()}`,
+    imageBuffer,
+    photo.type || 'image/jpeg',
+  )
 
-  imagesStore.set(jobId, {
-    buffer: imageBuffer,
-    mimeType: photo.type || 'image/jpeg',
-    originalName: photo.name,
-  })
-
-  if (isFreeRestore) {
-    creditsStore.useFree(userId)
-  } else {
-    creditsStore.deduct(userId, creditCost)
+  try {
+    const job = await createJobAndCharge({ userId, type, inputUrl: blobUrl })
+    simulateMockProcessing(job.id, job.inputUrl)
+    return NextResponse.json({ jobId: job.id }, { status: 201 })
+  } catch (error) {
+    await storage.delete(blobUrl).catch(() => {})
+    if (error instanceof InsufficientCreditsError) {
+      return NextResponse.json(
+        { error: 'No tienes suficientes créditos', code: 'INSUFFICIENT_CREDITS' },
+        { status: 402 },
+      )
+    }
+    throw error
   }
-
-  const now = new Date().toISOString()
-  const job: Job = {
-    id: jobId,
-    status: 'pending',
-    type,
-    inputUrl: `/api/image/${jobId}`,
-    outputUrl: null,
-    watermarked: isFreeRestore,
-    error: null,
-    createdAt: now,
-    updatedAt: now,
-    userId,
-  }
-
-  jobsStore.set(jobId, job)
-  simulateMockProcessing(jobId)
-
-  return NextResponse.json({ jobId }, { status: 201 })
 }

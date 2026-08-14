@@ -1,11 +1,11 @@
 import Link from 'next/link'
 import { getUserId } from '@/lib/cookies'
-import { creditsStore } from '@/lib/stores'
+import { getBalance } from '@/lib/credits'
 import { CameraIcon } from '@/components/icons/CameraIcon'
 
 export async function Header() {
   const userId = await getUserId()
-  const balance = creditsStore.get(userId)
+  const balance = await getBalance(userId)
 
   // Estado real del badge
   const showFreeAvailable = !balance.freeUsed

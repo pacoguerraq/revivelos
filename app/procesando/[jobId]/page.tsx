@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { jobsStore } from '@/lib/stores'
+import { getJobForUser, toApiJob } from '@/lib/jobs'
 import { getUserId } from '@/lib/cookies'
 import { ProgressStages } from '@/components/ui/ProgressStages'
 
@@ -15,12 +15,13 @@ export default async function ProcesandoPage({ params }: Props) {
   const { jobId } = await params
   const userId = await getUserId()
 
-  const job = jobsStore.get(jobId)
+  const rawJob = await getJobForUser(jobId, userId)
 
-  if (!job || job.userId !== userId) {
+  if (!rawJob) {
     notFound()
   }
 
+  const job = toApiJob(rawJob)
   const typeLabel = job.type === 'restore' ? 'Restaurando y colorizando' : 'Animando'
 
   return (

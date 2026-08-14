@@ -29,7 +29,20 @@ nvm use 22          # Node ≥20 obligatorio — el sistema puede tener v16
 npm run dev         # http://localhost:3000
 npm run build
 npm run lint
+npx prisma migrate dev --name <descripcion>   # nueva migración tras editar schema.prisma
+npx prisma studio                              # explorar la DB de Neon
 ```
+
+---
+
+## Prisma
+
+- Cliente singleton en `lib/db.ts` (patrón `globalThis`, evita agotar conexiones con hot reload). Importar `prisma` desde ahí, nunca instanciar `PrismaClient` en otro archivo.
+- `prisma@^6` / `@prisma/client@^6` — **fijado, no subir a v7** sin evaluar antes.
+- `DATABASE_URL` (pooling, para el cliente de la app) y `DIRECT_URL` (sin pooler, para migraciones) — ambas ya en `.env`. Si `DATABASE_URL` falta, `lib/db.ts` lanza un error explícito al importarse en vez de fallar con un error críptico de conexión.
+- **El descuento de créditos nunca es leer-y-luego-escribir.** `lib/jobs.ts` → `createJobAndCharge()` crea el `Job` y aplica un `UPDATE` condicional (`updateMany` con `WHERE credits >= costo` o `WHERE freeUsed = false`) dentro de la misma `$transaction`. Si el `count` resultante es 0, se lanza `InsufficientCreditsError` y Prisma revierte todo — incluida la creación del job, para no dejar huérfanos. No cambiar este patrón por un `findUnique` + `update` separados.
+- Los enums de Prisma (`JobStatus`, `JobType` en mayúsculas) no son los tipos de la API pública (`lib/types.ts`, minúsculas) — `toApiJob()` en `lib/jobs.ts` es el único punto de conversión. Si se agrega un campo al `Job` de Prisma que deba viajar al cliente, se añade ahí, no se expone el objeto de Prisma directo.
+- `CreditTransaction.jobId` es `onDelete: SetNull` a propósito: el cron de limpieza de jobs a 30 días (Fase 3, pendiente) puede borrar el `Job` sin arrastrarse el historial financiero.
 
 ---
 
@@ -39,7 +52,7 @@ npm run lint
 - **Params como Promise:** en Next.js 15+, `params` en rutas dinámicas es `Promise<{...}>` — siempre `await params`.
 - **Sin `Buffer` en `Response`:** usar `new Uint8Array(buf)` para pasar imágenes a `BodyInit`.
 - **Tailwind v4:** sintaxis `@import "tailwindcss"` + bloque `@theme` en `globals.css`. No existe `tailwind.config.ts`. Preflight resetea todos los headings a `inherit` (=17px) — **nunca uses clases `text-2xl` etc. en headings de sección**: usa `SectionHeading` o inline `clamp()`.
-- **Server Components por defecto.** `"use client"` solo cuando hay estado interactivo real. El Header lee créditos del store en el servidor.
+- **Server Components por defecto.** `"use client"` solo cuando hay estado interactivo real. El Header lee créditos de la DB en el servidor.
 - **Sin `any`** — TypeScript strict. Sin imports no usados.
 - **Sin emojis en la UI** — todos los iconos son SVG en `components/icons/` con prop `size` y `currentColor`.
 - **Sin comentarios obvios** — solo cuando el `por qué` es no obvio.
@@ -82,11 +95,17 @@ html { font-size: 17px }
 
 ```
 proxy.ts                          # cookie anónima uid (httpOnly, 1 año)
+prisma/
+  schema.prisma                   # User, Job, CreditTransaction — fuente de verdad de persistencia
+  migrations/                     # migraciones generadas por `prisma migrate dev`
 lib/
-  types.ts                        # Job, CreditBalance, StoredImage — fuente de verdad de tipos
+  types.ts                        # Job, CreditBalance — tipos de API (JobStatus/JobType en minúscula)
+  db.ts                           # singleton de PrismaClient (patrón globalThis)
+  credits.ts                      # ensureUser, getBalance, addCredits, InsufficientCreditsError
+  jobs.ts                         # createJobAndCharge (transacción atómica), getJobForUser, toApiJob
+  storage.ts                      # StorageAdapter — hoy Vercel Blob, put/delete
   pricing.ts                      # RESTORE_COST=1, ANIMATE_COST=3, PACKAGES[], calcEquivalencias()
   ejemplos.ts                     # EJEMPLOS[] — rutas de imágenes en /public/ejemplos/
-  stores.ts                       # jobsMap, imagesMap, creditsMap — Maps en memoria (mock)
   cookies.ts                      # getUserId() — lee cookie uid
 app/
   globals.css                     # design system completo (ver arriba)
@@ -96,12 +115,12 @@ app/
   procesando/[jobId]/page.tsx     # wrapper del poller
   resultado/[jobId]/page.tsx      # muestra imagen resultante + botones
   api/
-    jobs/route.ts                 # POST → crea job, valida créditos, guarda imagen, lanza mock timer
-    jobs/[jobId]/route.ts         # GET → estado del job (await params)
-    image/[jobId]/route.ts        # GET → sirve imagen como Uint8Array
-    credits/route.ts              # GET → balance | POST → 503 (TODO: Stripe)
+    jobs/route.ts                 # POST → sube a Blob, crea job + descuenta crédito en 1 transacción
+    jobs/[jobId]/route.ts         # GET → estado del job, valida dueño contra la DB (await params)
+    image/[jobId]/route.ts        # GET → proxy autenticado: valida dueño, hace fetch al blob y reenvía bytes
+    credits/route.ts              # GET → balance real de la DB | POST → 503 (TODO: Stripe)
 components/
-  layout/Header.tsx               # Server Component — lee créditos reales del store
+  layout/Header.tsx               # Server Component — lee créditos reales de la DB
   layout/Footer.tsx               # links de navegación
   landing/
     Hero.tsx                      # slider hero-antes/despues.jpg + CTA primario
@@ -128,14 +147,15 @@ components/
 | Módulo | Estado |
 |--------|--------|
 | Identidad anónima (cookie uid) | Funcionando |
-| Subida de foto y creación de job | Funcionando |
+| Subida de foto y creación de job | Funcionando — sube a Vercel Blob, persiste en Postgres |
+| Base de datos | **Funcionando** — Prisma + Neon Postgres. `User`, `Job`, `CreditTransaction` |
+| Créditos | **Funcionando** — descuento atómico en transacción (`lib/jobs.ts` `createJobAndCharge`), auditable vía `CreditTransaction` |
+| Almacenamiento de imágenes | **Funcionando** — Vercel Blob (`lib/storage.ts`), servidas solo vía proxy autenticado `/api/image/[jobId]` |
 | Modelos y prompts de IA | **Validados a mano en el sandbox de fal** — ver sección siguiente. Sin integrar en código. |
-| Procesamiento | Mock — `setTimeout` 2s→11s, no llama a ninguna IA |
-| Créditos | Mock — Maps en memoria, se resetean al reiniciar |
+| Procesamiento | Mock — `setTimeout` 2s→11s escribe el estado en la DB, no llama a ninguna IA. Sigue sin sobrevivir un reinicio del proceso a medio timer — eso lo resuelve la Fase 2 con cola + webhooks |
 | Imágenes de resultado | Mock — devuelve la misma imagen de entrada |
-| Pago / Stripe | Sin implementar — `POST /api/credits` devuelve 503 |
+| Pago / Stripe | Sin implementar — `POST /api/credits` devuelve 503. `addCredits()` en `lib/credits.ts` ya existe para cuando se integre |
 | Imágenes de /public/ejemplos/ | Sin agregar — sliders muestran ImageFallback con la ruta |
-| Base de datos | Sin implementar — todo vive en Maps |
 
 ---
 

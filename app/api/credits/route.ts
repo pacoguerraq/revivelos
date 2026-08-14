@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
-import { creditsStore } from '@/lib/stores'
+import { getBalance } from '@/lib/credits'
 import { getUserId } from '@/lib/cookies'
 
 export async function GET() {
   const userId = await getUserId()
-  const balance = creditsStore.get(userId)
+  const balance = await getBalance(userId)
   return NextResponse.json(balance)
 }
 

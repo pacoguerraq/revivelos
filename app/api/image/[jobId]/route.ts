@@ -1,20 +1,36 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { imagesStore } from '@/lib/stores'
+import { getUserId } from '@/lib/cookies'
+import { getJobForUser } from '@/lib/jobs'
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> },
 ) {
   const { jobId } = await params
-  const image = imagesStore.get(jobId)
+  const userId = await getUserId()
 
-  if (!image) {
+  const job = await getJobForUser(jobId, userId)
+  if (!job) {
     return new NextResponse('Imagen no encontrada', { status: 404 })
   }
 
-  return new NextResponse(new Uint8Array(image.buffer), {
+  const variant = request.nextUrl.searchParams.get('v') === 'output' ? 'output' : 'input'
+  const blobUrl = variant === 'output' ? job.outputUrl : job.inputUrl
+
+  if (!blobUrl) {
+    return new NextResponse('Imagen no encontrada', { status: 404 })
+  }
+
+  const blobResponse = await fetch(blobUrl)
+  if (!blobResponse.ok) {
+    return new NextResponse('No se pudo obtener la imagen', { status: 502 })
+  }
+
+  const buffer = new Uint8Array(await blobResponse.arrayBuffer())
+
+  return new NextResponse(buffer, {
     headers: {
-      'Content-Type': image.mimeType,
+      'Content-Type': blobResponse.headers.get('content-type') ?? 'image/jpeg',
       'Cache-Control': 'private, max-age=3600',
     },
   })

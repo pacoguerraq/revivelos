@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
-import { jobsStore } from '@/lib/stores'
 import { getUserId } from '@/lib/cookies'
+import { getJobForUser, toApiJob } from '@/lib/jobs'
 
 export async function GET(
   _request: NextRequest,
@@ -9,15 +9,11 @@ export async function GET(
   const { jobId } = await params
   const userId = await getUserId()
 
-  const job = jobsStore.get(jobId)
+  const job = await getJobForUser(jobId, userId)
 
   if (!job) {
     return NextResponse.json({ error: 'Job no encontrado' }, { status: 404 })
   }
 
-  if (job.userId !== userId) {
-    return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
-  }
-
-  return NextResponse.json(job)
+  return NextResponse.json(toApiJob(job))
 }

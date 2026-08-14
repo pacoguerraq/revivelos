@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { jobsStore } from '@/lib/stores'
+import { getJobForUser, toApiJob } from '@/lib/jobs'
 import { getUserId } from '@/lib/cookies'
 import { BeforeAfterSlider } from '@/components/ui/BeforeAfterSlider'
 import { ShareButton } from '@/components/ui/ShareButton'
@@ -17,11 +17,13 @@ export default async function ResultadoPage({ params }: Props) {
   const { jobId } = await params
   const userId = await getUserId()
 
-  const job = jobsStore.get(jobId)
+  const rawJob = await getJobForUser(jobId, userId)
 
-  if (!job || job.userId !== userId) {
+  if (!rawJob) {
     notFound()
   }
+
+  const job = toApiJob(rawJob)
 
   if (job.status === 'failed') {
     return <ErrorView />
