@@ -45,7 +45,7 @@ export function PackageCard({ pkg }: { pkg: Package }) {
 
       {/* Equivalencia — una línea, sin caja, sin "o cualquier combinación" */}
       <p
-        className="text-sm font-semibold mb-5 pb-4"
+        className="text-sm font-semibold mb-5 pb-4 flex-1"
         style={{
           color: 'var(--color-bark)',
           borderBottom: '1px solid var(--color-sepia-100)',
@@ -53,16 +53,6 @@ export function PackageCard({ pkg }: { pkg: Package }) {
       >
         {restoresLabel} o {videosLabel} animados
       </p>
-
-      {/* Único diferenciador por plan */}
-      <ul className="mb-6 flex-1">
-        {pkg.credits >= 15 && (
-          <li className="flex items-start gap-2 text-sm">
-            <span style={{ color: 'var(--color-success)', flexShrink: 0 }}>✓</span>
-            <span style={{ color: 'var(--color-bark-muted)' }}>Soporte por WhatsApp</span>
-          </li>
-        )}
-      </ul>
 
       {/* TODO: integrar Stripe — conectar este botón con el checkout */}
       <button

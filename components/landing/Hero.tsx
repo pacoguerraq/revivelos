@@ -40,9 +40,6 @@ export function Hero() {
               style={{ fontSize: '1.05rem', color: 'var(--color-bark-muted)', maxWidth: 440 }}
             >
               Restauramos, colorizamos y animamos fotos viejas, dañadas o en blanco y negro.
-              La primera foto es{' '}
-              <strong style={{ color: 'var(--color-bark)' }}>completamente gratis</strong>,
-              sin necesidad de crear una cuenta.
             </p>
 
             <Link

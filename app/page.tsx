@@ -1,5 +1,6 @@
 import { Hero } from '@/components/landing/Hero'
 import { Ejemplos } from '@/components/landing/Ejemplos'
+import { VideoEjemplo } from '@/components/landing/VideoEjemplo'
 import { HowItWorks } from '@/components/landing/HowItWorks'
 import { Pricing } from '@/components/landing/Pricing'
 import { FAQ } from '@/components/landing/FAQ'
@@ -10,6 +11,7 @@ export default function LandingPage() {
     <>
       <Hero />
       <Ejemplos />
+      <VideoEjemplo />
       <HowItWorks />
       <Pricing />
       <FAQ />
