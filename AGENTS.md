@@ -152,7 +152,10 @@ components/
 
 | Módulo | Estado |
 |--------|--------|
-| Identidad anónima (cookie uid) | Funcionando |
+| Identidad anónima (cookie uid) | Funcionando — y ya no se emite si hay sesión autenticada (`proxy.ts`) |
+| Autenticación (Google + magic link) | **Funcionando** — Auth.js v5 + `@auth/prisma-adapter`, sesión en DB. `lib/auth.ts` |
+| Fusión de identidad anónimo → cuenta | **Funcionando** — un solo algoritmo cubre los 3 casos (`lib/auth-merge.ts` `mergeAnonymousUser`), llamado desde `events.signIn` en `lib/auth.ts` (no desde `callbacks.signIn` — ver nota abajo), probado contra la DB real incluyendo un job en vuelo fusionado a mitad de procesamiento |
+| Galería `/mis-fotos` | **Funcionando** — requiere sesión, paginación por cursor, aviso de borrado a 30 días |
 | Subida de foto y creación de job | Funcionando — sube a Vercel Blob, persiste en Postgres |
 | Base de datos | **Funcionando** — Prisma + Neon Postgres. `User`, `Job`, `CreditTransaction` |
 | Créditos | **Funcionando** — descuento atómico en transacción (`lib/jobs.ts` `createJobAndCharge`), auditable vía `CreditTransaction` |
@@ -353,6 +356,13 @@ FAL_MODEL_ANIMATE=fal-ai/kling-video/v2.5-turbo/pro/image-to-video
 # su JWKS público (https://rest.alpha.fal.ai/.well-known/jwks.json),
 # no con un secreto compartido. Ver lib/fal-verify.ts.
 
+AUTH_SECRET=                # firma cookies/tokens de Auth.js — generar con `npx auth secret` u openssl, no requiere servicio externo
+AUTH_URL=                   # origen canónico del sitio (hoy el túnel de ngrok). Determina useSecureCookies → el nombre real de la cookie de sesión es __Secure-authjs.session-token si AUTH_URL es https, aunque se pruebe sobre http en local
+AUTH_GOOGLE_ID=              # Google Cloud Console — ver instrucciones abajo
+AUTH_GOOGLE_SECRET=
+AUTH_RESEND_KEY=             # Resend — ver instrucciones abajo
+EMAIL_FROM="Revívelos <noreply@tudominio.mx>"
+
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 MERCADOPAGO_ACCESS_TOKEN=
@@ -362,7 +372,29 @@ NEXT_PUBLIC_FB_PIXEL_ID=
 NEXT_PUBLIC_BASE_URL=       # usada para construir el webhookUrl que se le pasa a fal.queue.submit
 ```
 
-Hoy vive en `.env` (no `.env.local`) en este entorno de desarrollo, con `DATABASE_URL`/`DIRECT_URL` de Neon, `BLOB_READ_WRITE_TOKEN` de Vercel Blob y `FAL_KEY` reales. `NEXT_PUBLIC_BASE_URL` apunta a un túnel de ngrok mientras no hay dominio propio — cámbiala si el túnel cambia, o los webhooks de fal no van a poder llegar.
+Hoy vive en `.env` (no `.env.local`) en este entorno de desarrollo, con `DATABASE_URL`/`DIRECT_URL` de Neon, `BLOB_READ_WRITE_TOKEN` de Vercel Blob y `FAL_KEY` reales. `NEXT_PUBLIC_BASE_URL` apunta a un túnel de ngrok mientras no hay dominio propio — cámbiala si el túnel cambia, o los webhooks de fal no van a poder llegar. `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET`/`AUTH_RESEND_KEY` hoy tienen placeholders (`"placeholder-configure-me"`) solo para que el servidor arranque en dev — el login real no funciona hasta reemplazarlos por credenciales reales.
+
+**Gotcha de dev con `AUTH_URL` en https (ngrok):** el navegador solo guarda cookies con prefijo `__Secure-` en orígenes https. Si `AUTH_URL` apunta al túnel de ngrok (https) pero se navega directo a `http://localhost:3000`, el login se ve roto — la cookie de sesión nunca se guarda. Para probar login en local, hay que navegar a través de la URL de ngrok, no de `localhost` directo.
+
+**`callbacks.signIn` corre ANTES de que exista la fila de `User`, no después.** Para un usuario nuevo el orden real es: perfil de OAuth → `callbacks.signIn` → (si devuelve `true`) `adapter.createUser` + `createSession` → `events.signIn`. Cualquier código en `callbacks.signIn` que asuma que `user.id` ya tiene fila en la DB (un `update`, o `mergeAnonymousUser`) falla con "No record was found for an update" en el primer login de cada cuenta nueva, y Auth.js traduce esa excepción en un `AccessDenied` genérico — no hay traza clara hacia la causa real. La regla: todo lo que necesite que el usuario ya exista en la DB va en `events.signIn` (recibe `user`, `account`, `profile` e `isNewUser`, y sí corre después de crear usuario y sesión), nunca en el callback. Lo que sí puede ir en el callback es lógica que no toca la DB por ese id — como decidir si permitir o negar el login (por ejemplo, el guard de `allowDangerousEmailAccountLinking` de abajo, que solo lee). Ver `lib/auth.ts`.
+
+**Un solo usuario por correo, sin importar el método (Google ↔ magic link).** `Google({ allowDangerousEmailAccountLinking: true })` deja que un login de Google se enlace a una cuenta existente con el mismo correo (creada antes por magic link) en vez de fallar con `OAuthAccountNotLinked`. Es seguro **solo en este provider y solo porque las dos partes ya probaron ser dueñas del correo por caminos independientes**: Google, cuando `profile.email_verified === true`; el magic link, por definición, al haberlo clickeado. `callbacks.signIn` bloquea explícitamente el caso peligroso (Google con `email_verified: false` intentando enlazar a una cuenta que ya existe) devolviendo `false` — un correo no verificado no prueba nada. **Si se agrega otro provider OAuth, no copiar la bandera sin repetir este mismo análisis para ese provider.** Al enlazar, `events.signIn` rellena `name`/`image`/`emailVerified` **solo si están en null** (nunca pisa un valor que el usuario ya tenía) — probado contra la DB real en ambos órdenes (magic link→Google y Google→magic link).
+
+**`events.signOut` limpia la cookie `uid`, y es obligatorio.** `setAnonUidCookie()` reescribe `uid` al id del usuario autenticado en cada login (para que un login posterior en el mismo dispositivo se fusione en vez de crear otro anónimo). Sin limpiarla al salir, `uid` se queda apuntando a una cuenta real ya sin sesión — `getUserId()` la toma como identidad anónima y expone el saldo/créditos de esa cuenta sin necesidad de volver a autenticarse. Se detectó y confirmó este bug contra la DB real antes de corregirlo.
+
+**`proxy.ts` valida el *valor* de la cookie de sesión, no solo su presencia.** La respuesta de `/api/auth/signout` limpia `...session-token` con `Set-Cookie: ...=;` **sin `Expires`/`Max-Age`** — el navegador la conserva como cookie de sesión con valor vacío hasta que se cierra, no la borra. Un `request.cookies.has(name)` la cuenta como "hay sesión" igual, así que después de salir nunca se emitía un `uid` nuevo y `getUserId()` caía al fallback — que además era un literal `'anonymous'` compartido entre cualquiera en ese estado (ya corregido: el fallback ahora es un `crypto.randomUUID()` por request, nunca un id fijo). La regla: cualquier chequeo de "¿hay sesión?" en código que corre antes de `auth()` (o sin DB a mano, como en `proxy.ts`) debe revisar `.value`, no solo que la cookie exista.
+
+### Configuración externa pendiente (auth)
+
+Esto no lo puede hacer un agente — hay que configurarlo a mano fuera del repo:
+
+1. **Google Cloud Console** → crear credenciales OAuth 2.0 (tipo "Web application"):
+   - **Authorized redirect URIs** — agregar *ambas*, dev y producción:
+     - `https://ducky-awning-reckless.ngrok-free.dev/api/auth/callback/google` (o el subdominio de ngrok vigente)
+     - `https://<dominio-de-producción>/api/auth/callback/google`
+   - Copiar el Client ID y Client Secret a `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`.
+   - Si el túnel de ngrok cambia de subdominio (pasa en el plan gratuito cada vez que se reinicia), hay que volver a agregar la nueva redirect URI aquí — si no, Google responde `redirect_uri_mismatch`.
+2. **Resend**: verificar el dominio de envío (`EMAIL_FROM`, hoy `noreply@tudominio.mx` como placeholder) — sin dominio verificado, Resend rechaza el envío o lo manda a spam agresivamente. Generar la API key y ponerla en `AUTH_RESEND_KEY`.
 
 ---
 

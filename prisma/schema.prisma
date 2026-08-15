@@ -44,13 +44,60 @@ enum CreditReason {
 }
 
 model User {
-  id        String   @id // = uid de la cookie httpOnly, no autogenerado
+  // @default(cuid()) es una red de seguridad: Auth.js genera el id él mismo
+  // antes de llamar a adapter.createUser (así que este default normalmente
+  // nunca se usa), pero si eso cambiara entre versiones, un create sin id
+  // explícito falla con un error críptico en vez de tener un fallback.
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  isAnonymous   Boolean   @default(true)
+
   credits   Int      @default(0)
   freeUsed  Boolean  @default(false)
   createdAt DateTime @default(now())
 
+  accounts     Account[]
+  sessions     Session[]
   jobs         Job[]
   transactions CreditTransaction[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
 // Segunda capa antiabuso del free tier, además de User.freeUsed: el id es un

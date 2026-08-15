@@ -1,12 +1,17 @@
 import Link from 'next/link'
 import { getUserId } from '@/lib/cookies'
 import { getBalance } from '@/lib/credits'
+import { auth } from '@/lib/auth'
 import { CameraIcon } from '@/components/icons/CameraIcon'
 import { HeaderNav } from './HeaderNav'
 
 export async function Header() {
-  const userId = await getUserId()
+  const [userId, session] = await Promise.all([getUserId(), auth()])
   const balance = await getBalance(userId)
+
+  const navUser = session?.user
+    ? { name: session.user.name ?? session.user.email ?? 'Tu cuenta' }
+    : null
 
   return (
     <header
@@ -37,9 +42,7 @@ export async function Header() {
           </span>
         </Link>
 
-        {/* Sin auth implementada todavía — user siempre null. Cuando exista
-            sesión real, pasar aquí el usuario logueado. */}
-        <HeaderNav freeUsed={balance.freeUsed} credits={balance.credits} user={null} />
+        <HeaderNav freeUsed={balance.freeUsed} credits={balance.credits} user={navUser} />
       </div>
     </header>
   )
