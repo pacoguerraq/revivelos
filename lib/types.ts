@@ -1,10 +1,12 @@
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed'
 export type JobType = 'restore' | 'animate'
+export type JobStage = 'restoring' | 'animating' | 'done'
 
 export interface Job {
   id: string
   status: JobStatus
   type: JobType
+  stage: JobStage
   inputUrl: string
   outputUrl: string | null
   watermarked: boolean

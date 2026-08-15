@@ -99,11 +99,15 @@ prisma/
   schema.prisma                   # User, Job, CreditTransaction — fuente de verdad de persistencia
   migrations/                     # migraciones generadas por `prisma migrate dev`
 lib/
-  types.ts                        # Job, CreditBalance — tipos de API (JobStatus/JobType en minúscula)
+  types.ts                        # Job, CreditBalance — tipos de API (JobStatus/JobType/JobStage en minúscula)
   db.ts                           # singleton de PrismaClient (patrón globalThis)
   credits.ts                      # ensureUser, getBalance, addCredits, InsufficientCreditsError
-  jobs.ts                         # createJobAndCharge (transacción atómica), getJobForUser, toApiJob
+  jobs.ts                         # createJobAndCharge, markSubmitted, failJobAndRefund, getJobForUser, toApiJob
   storage.ts                      # StorageAdapter — hoy Vercel Blob, put/delete
+  fal.ts                          # config de fal, prompts validados, submitRestore/submitAnimate, extractores de payload
+  fal-verify.ts                   # verificación ED25519 del webhook contra el JWKS de fal (cacheado 24h)
+  watermark.ts                    # sharp: resize + marca de agua (2 líneas) para la vista previa gratuita
+  fingerprint.ts                  # cliente: hash de canvas+navegador — 2da capa antiabuso del free tier
   pricing.ts                      # RESTORE_COST=1, ANIMATE_COST=3, PACKAGES[], calcEquivalencias()
   ejemplos.ts                     # EJEMPLOS[] — rutas de imágenes en /public/ejemplos/
   cookies.ts                      # getUserId() — lee cookie uid
@@ -112,13 +116,14 @@ app/
   layout.tsx                      # fuentes Lora + Inter, Header + Footer
   page.tsx                        # landing: Hero → Ejemplos → HowItWorks → Pricing → FAQ → CTA
   crear/page.tsx                  # sube foto → elige acción → POST /api/jobs
-  procesando/[jobId]/page.tsx     # wrapper del poller
-  resultado/[jobId]/page.tsx      # muestra imagen resultante + botones
+  procesando/[jobId]/page.tsx     # wrapper del poller — mensajes de espera honestos según el tipo
+  resultado/[jobId]/page.tsx      # muestra imagen o <video> según Job.type + botones
   api/
-    jobs/route.ts                 # POST → sube a Blob, crea job + descuenta crédito en 1 transacción
+    jobs/route.ts                 # POST → sube a Blob y a fal.storage, crea job + descuenta crédito, submitRestore
     jobs/[jobId]/route.ts         # GET → estado del job, valida dueño contra la DB (await params)
     image/[jobId]/route.ts        # GET → proxy autenticado: valida dueño, hace fetch al blob y reenvía bytes
     credits/route.ts              # GET → balance real de la DB | POST → 503 (TODO: Stripe)
+    webhooks/falai/route.ts       # POST → verifica firma, procesa OK/ERROR, encadena restore→animate, reembolsa en fallos
 components/
   layout/Header.tsx               # Server Component — lee créditos reales de la DB
   layout/Footer.tsx               # links de navegación
@@ -132,10 +137,11 @@ components/
     BeforeAfterSlider.tsx         # pointer events + clip-path; onError → ImageFallback con ruta
     PhotoUploader.tsx             # drag & drop + preview + selector restore/animate
     PackageCard.tsx               # calcula equivalencias con calcEquivalencias()
-    ProgressStages.tsx            # poller cada 2s → redirige a /resultado/[jobId]
+    ProgressStages.tsx            # poller cada 2s, etapas restoring/animating reales → redirige a /resultado/[jobId]
     SectionHeading.tsx            # OBLIGATORIO para h2 de sección — corrige preflight de Tailwind v4
     Accordion.tsx                 # FAQ items con animación max-height
     ShareButton.tsx               # botón de compartir resultado
+    DownloadButton.tsx            # descarga vía fetch+blob con loader — necesario para video (varios MB)
   icons/
     CameraIcon.tsx  FilmIcon.tsx  PaletteIcon.tsx  LockIcon.tsx  DownloadIcon.tsx
 ```
@@ -151,11 +157,16 @@ components/
 | Base de datos | **Funcionando** — Prisma + Neon Postgres. `User`, `Job`, `CreditTransaction` |
 | Créditos | **Funcionando** — descuento atómico en transacción (`lib/jobs.ts` `createJobAndCharge`), auditable vía `CreditTransaction` |
 | Almacenamiento de imágenes | **Funcionando** — Vercel Blob (`lib/storage.ts`), servidas solo vía proxy autenticado `/api/image/[jobId]` |
-| Modelos y prompts de IA | **Validados a mano en el sandbox de fal** — ver sección siguiente. Sin integrar en código. |
-| Procesamiento | Mock — `setTimeout` 2s→11s escribe el estado en la DB, no llama a ninguna IA. Sigue sin sobrevivir un reinicio del proceso a medio timer — eso lo resuelve la Fase 2 con cola + webhooks |
-| Imágenes de resultado | Mock — devuelve la misma imagen de entrada |
+| Modelos y prompts de IA | **Funcionando** — integrados en `lib/fal.ts`, validados a mano en el sandbox de fal (ver sección siguiente) y confirmados en vivo contra la API real de fal |
+| Procesamiento | **Funcionando** — cola de fal (`fal.queue.submit`) + webhook (`/api/webhooks/falai`), sin polling síncrono. RESTORE es una llamada; ANIMATE encadena restauración (siempre modelo PAID) → animación, correlacionadas por `Job.falRequestId` (único, se reescribe en cada salto de etapa) |
+| Verificación de webhooks | **Funcionando** — ED25519 contra el JWKS de fal (`lib/fal-verify.ts`), timestamp con ventana de 5 min contra replay |
+| Vista previa gratuita | **Funcionando** — `lib/watermark.ts` (sharp) reduce resolución y aplica marca de agua antes de guardar en Blob |
+| Reembolsos | **Funcionando** — si fal devuelve error, el payload no tiene el formato esperado, o pasan 15 min sin respuesta (timeout perezoso en `getJobForUser`), el job pasa a FAILED y se reembolsa el crédito (o se revierte `freeUsed`) de forma atómica e idempotente |
+| Imágenes de resultado | **Funcionando** — descargadas de fal (URLs `v3.fal.media`, temporales) y re-subidas a Vercel Blob antes de responder al usuario |
 | Pago / Stripe | Sin implementar — `POST /api/credits` devuelve 503. `addCredits()` en `lib/credits.ts` ya existe para cuando se integre |
 | Imágenes de /public/ejemplos/ | Sin agregar — sliders muestran ImageFallback con la ruta |
+
+**Pendiente de verificar antes de producción:** los nombres exactos de los parámetros de input de cada modelo de fal (`image_urls` vs `image_url`, nombre del flag de audio) se implementaron según la convención más documentada y se confirmaron en vivo para `nano-banana*/edit` (`image_urls: string[]`) contra la API real; falta correr un job ANIMATE real de punta a punta para confirmar el input de `kling-video/.../image-to-video`.
 
 ---
 
@@ -243,23 +254,22 @@ Photorealistic. Preserve the exact facial features and identity of every person.
 
 ## Roadmap (3 fases)
 
-### Fase 1 — Infraestructura real ← SIGUIENTE
-- **Prisma + Postgres** (Neon o Supabase): modelos `User`, `Job`, `CreditTransaction`. Migrar `stores.ts` → Prisma client. Deducción de créditos en transacción atómica: verificar saldo *dentro* de la transacción, nunca leer-y-luego-escribir.
-- **`lib/storage.ts`**: abstracción local (disco) / producción (Cloudflare R2 — sin costo de egress, relevante con video). Upload en `POST /api/jobs`, download en `/api/image/[jobId]`.
-- **Imágenes de ejemplo reales**: agregar a `/public/ejemplos/` — `hero-antes.jpg`, `hero-despues.jpg`, `1-antes.jpg`, `1-despues.jpg`, `2-antes.jpg`, `2-despues.jpg`, `3-antes.jpg`, `3-despues.jpg`.
+### Fase 1 — Infraestructura real ✅ hecho
+- Prisma + Neon Postgres: `User`, `Job`, `CreditTransaction`. Deducción de créditos en transacción atómica (`updateMany` condicional, nunca leer-y-luego-escribir).
+- `lib/storage.ts` sobre Vercel Blob. Upload en `POST /api/jobs`, download proxied en `/api/image/[jobId]`.
+- **Pendiente de esta fase:** imágenes de ejemplo reales en `/public/ejemplos/` (`hero-antes.jpg`, `hero-despues.jpg`, `1-antes.jpg`…`3-despues.jpg`) — los sliders siguen mostrando `ImageFallback`.
 
-**Por qué es lo siguiente:** los Maps en memoria no sobreviven en Vercel. Cada invocación serverless puede caer en otro proceso y los `setTimeout` mueren al terminar la función. Hoy un usuario puede pagar y perder su saldo. El deploy actual no debe compartirse con nadie.
+### Fase 2 — IA real ✅ hecho
+- `lib/fal.ts` con los IDs de modelo (env) y los prompts validados, `submitRestore`/`submitAnimate`.
+- Cola con webhooks (`app/api/webhooks/falai/route.ts`), sin polling síncrono. El cliente consulta estado contra nuestra propia DB (`GET /api/jobs/[jobId]`), no contra fal.
+- Verificación ED25519 del webhook contra el JWKS de fal (`lib/fal-verify.ts`) — body crudo, sin secreto compartido.
+- Idempotencia: `Job.falRequestId` (único) correlaciona el webhook; se reescribe en cada salto de etapa (`Job.stage`), así una entrega duplicada de una etapa ya superada deja de encontrar el job y es un no-op automático. El salto RESTORING → ANIMATING se reclama con un `updateMany` condicional antes de lanzar la segunda llamada a fal, para que dos entregas casi simultáneas no disparen dos videos.
+- Las URLs que devuelve fal (`v3.fal.media`) son temporales — se descargan y se re-suben a Blob antes de responder al usuario. Para encadenar restore→animate se usa la URL de fal directamente (todavía vigente en ese momento), no hace falta re-subir a `fal.storage`.
+- Vista previa gratuita: `lib/watermark.ts` (sharp) reduce resolución y aplica marca de agua antes de guardar.
+- Fallos: `failJobAndRefund()` en `lib/jobs.ts` marca `FAILED` y reembolsa (o revierte `freeUsed`) en una transacción corta sin red, protegida por un `updateMany` condicional para ser idempotente ante reintentos del webhook. Timeout perezoso de 15 min en `getJobForUser` para jobs que nunca reciben webhook.
+- **Pendiente de esta fase:** correr un job ANIMATE real de punta a punta para confirmar el input exacto de `kling-video/.../image-to-video` (ver nota en la tabla de estado). Evaluar recortar el clip a ~3s en loop si la degradación al final del video resulta molesta en pruebas reales.
 
-### Fase 2 — IA real
-- Cliente de fal en `lib/fal.ts` con los IDs y prompts de arriba.
-- **Cola con webhooks, NO polling síncrono.** Los tiempos medidos lo exigen: restaurar tarda 8-20s y animar 67-142s, muy por encima del timeout de una función serverless.
-- Flujo: crear job en DB → enviar a la cola de fal con `webhook_url` → fal pega en `app/api/webhooks/falai/route.ts` al terminar → actualizar job. El cliente consulta estado contra nuestra propia DB, no contra fal.
-- **Las URLs que devuelve fal son temporales**: copiar el archivo a nuestro storage antes de responder.
-- Punto de integración actual: `simulateMockProcessing()` en `app/api/jobs/route.ts`.
-- Encadenamiento del video: restaurar primero, guardar, y usar esa salida como entrada de Kling.
-- Considerar recortar el clip a ~3s en loop: la degradación aparece al final y un loop corto se siente más natural que un corte seco.
-
-### Fase 3 — Monetización y growth
+### Fase 3 — Monetización y growth ← SIGUIENTE
 - **Stripe** (tarjetas) + **Mercado Pago** (OXXO, SPEI, tarjetas locales). Los dos, no uno: el comprador de 55 años muchas veces no mete tarjeta.
 - Webhook de pago → acreditar en `CreditTransaction`.
 - **Meta Pixel + CAPI server-side**: disparar `Purchase` desde la API route al confirmar el pago. Sin CAPI el algoritmo optimiza a ciegas y el CPA nunca baja.
@@ -303,7 +313,9 @@ Por eso la vista previa gratuita usa el modelo barato. Esa decisión duplica el 
 
 ### Controles antiabuso del free tier
 
-Una sola restauración gratis por usuario (`freeUsed`), en baja resolución, con marca de agua, y limitada por fingerprint de dispositivo además de la cookie. El video **nunca** gratis completo — máximo un preview corto con marca de agua.
+Una sola restauración gratis por usuario (`freeUsed`), en baja resolución, con marca de agua. El video **nunca** gratis completo — máximo un preview corto con marca de agua.
+
+**Funcionando:** doble capa — `User.freeUsed` (cookie `uid`) + `DeviceFingerprint` (hash de canvas + características del navegador, calculado en `lib/fingerprint.ts` y enviado por `PhotoUploader` en cada submit). El reclamo de ambos es atómico (`lib/jobs.ts` → `createJobAndCharge`): si el fingerprint ya se usó, el job se cobra como cualquier otro en vez de bloquear al usuario. Si el job falla, `failJobAndRefund` revierte tanto `freeUsed` como el fingerprint. Límite honesto: sobrevive a incógnito y a borrar cookies del mismo navegador, pero no a cambiar de navegador — eso requeriría fingerprinting de terceros (FingerprintJS Pro o similar) o server-side (IP), fuera de alcance por ahora.
 
 **Pendiente de ajustar:** el paquete Básico de 5 créditos es un número incómodo (1 video y sobran 2). Considerar 6 créditos o bajar el precio a $89.
 
@@ -327,30 +339,30 @@ Una sola restauración gratis por usuario (`freeUsed`), en baja resolución, con
 ## Variables de entorno
 
 ```
-# .env.local
-DATABASE_URL=              # Postgres (Neon/Supabase)
+# .env
+DATABASE_URL=              # Postgres pooled (Neon) — cliente de la app
+DIRECT_URL=                # Postgres sin pooler — migraciones
+
+BLOB_READ_WRITE_TOKEN=     # Vercel Blob
 
 FAL_KEY=                   # fal.ai API key
 FAL_MODEL_RESTORE_PAID=fal-ai/nano-banana-pro/edit
 FAL_MODEL_RESTORE_FREE=fal-ai/nano-banana/edit
 FAL_MODEL_ANIMATE=fal-ai/kling-video/v2.5-turbo/pro/image-to-video
-FAL_WEBHOOK_SECRET=        # validar los webhooks entrantes de fal
+# No hay FAL_WEBHOOK_SECRET: fal firma con ED25519 y se valida contra
+# su JWKS público (https://rest.alpha.fal.ai/.well-known/jwks.json),
+# no con un secreto compartido. Ver lib/fal-verify.ts.
 
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 MERCADOPAGO_ACCESS_TOKEN=
 
-R2_ACCOUNT_ID=             # Cloudflare R2
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET_NAME=
-
 CRON_SECRET=               # protege /api/cron/cleanup
 NEXT_PUBLIC_FB_PIXEL_ID=
-NEXT_PUBLIC_BASE_URL=
+NEXT_PUBLIC_BASE_URL=       # usada para construir el webhookUrl que se le pasa a fal.queue.submit
 ```
 
-Hoy no existe `.env.local` en el repo. El proyecto corre sin variables porque todo es mock.
+Hoy vive en `.env` (no `.env.local`) en este entorno de desarrollo, con `DATABASE_URL`/`DIRECT_URL` de Neon, `BLOB_READ_WRITE_TOKEN` de Vercel Blob y `FAL_KEY` reales. `NEXT_PUBLIC_BASE_URL` apunta a un túnel de ngrok mientras no hay dominio propio — cámbiala si el túnel cambia, o los webhooks de fal no van a poder llegar.
 
 ---
 

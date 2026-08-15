@@ -23,6 +23,9 @@ export default async function ProcesandoPage({ params }: Props) {
 
   const job = toApiJob(rawJob)
   const typeLabel = job.type === 'restore' ? 'Restaurando y colorizando' : 'Animando'
+  const waitMessage = job.type === 'restore'
+    ? 'Toma solo un momento. No cierres esta pantalla.'
+    : 'Los videos tardan varios minutos. No cierres esta pantalla — puedes volver más tarde y seguirá procesándose.'
 
   return (
     <div className="py-16 sm:py-24">
@@ -36,7 +39,7 @@ export default async function ProcesandoPage({ params }: Props) {
             {typeLabel} tu foto…
           </h1>
           <p style={{ color: 'var(--color-bark-muted)' }}>
-            Tarda menos de un minuto. No cierres esta pantalla.
+            {waitMessage}
           </p>
         </div>
 

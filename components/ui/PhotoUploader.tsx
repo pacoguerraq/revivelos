@@ -1,10 +1,11 @@
 'use client'
 
-import { useRef, useState, useCallback, type DragEvent, type ChangeEvent } from 'react'
+import { useRef, useState, useCallback, useEffect, type DragEvent, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { CameraIcon } from '@/components/icons/CameraIcon'
 import { PaletteIcon } from '@/components/icons/PaletteIcon'
 import { FilmIcon } from '@/components/icons/FilmIcon'
+import { getDeviceFingerprint } from '@/lib/fingerprint'
 
 type ActionType = 'restore' | 'animate'
 
@@ -42,6 +43,11 @@ export function PhotoUploader() {
   const [action, setAction] = useState<ActionType>('restore')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [creditError, setCreditError] = useState(false)
+  const fingerprintRef = useRef<string>('')
+
+  useEffect(() => {
+    getDeviceFingerprint().then((fp) => { fingerprintRef.current = fp })
+  }, [])
 
   const handleFile = useCallback((incoming: File) => {
     setError(null)
@@ -81,6 +87,7 @@ export function PhotoUploader() {
       const formData = new FormData()
       formData.append('photo', file)
       formData.append('type', action)
+      if (fingerprintRef.current) formData.append('fingerprint', fingerprintRef.current)
 
       const res = await fetch('/api/jobs', { method: 'POST', body: formData })
       const data: { jobId?: string; error?: string; code?: string } = await res.json()
@@ -92,6 +99,7 @@ export function PhotoUploader() {
       }
 
       router.push(`/procesando/${data.jobId}`)
+      router.refresh() // el crédito ya se descontó en el servidor — refresca el badge del Header
     } catch {
       setError('No se pudo conectar con el servidor. Revisa tu internet e intenta de nuevo.')
     } finally {
@@ -143,6 +151,7 @@ export function PhotoUploader() {
               icon={<FilmIcon size={22} />}
               title="Animar en video"
               description="Crea un video corto donde la persona se mueve suavemente"
+              note="Funciona mejor con fotos de una o dos personas y rostros grandes."
               badge="3 créditos"
             />
           </div>
@@ -243,7 +252,7 @@ export function PhotoUploader() {
 }
 
 function ActionCard({
-  selected, onClick, icon, title, description, badge,
+  selected, onClick, icon, title, description, badge, note,
 }: {
   selected: boolean
   onClick: () => void
@@ -251,6 +260,7 @@ function ActionCard({
   title: string
   description: string
   badge: string
+  note?: string
 }) {
   return (
     <button
@@ -277,6 +287,11 @@ function ActionCard({
           <p className="text-xs leading-snug" style={{ color: 'var(--color-bark-muted)' }}>
             {description}
           </p>
+          {note && (
+            <p className="text-xs leading-snug mt-1 italic" style={{ color: 'var(--color-sepia-300)' }}>
+              {note}
+            </p>
+          )}
           <span
             className="inline-block mt-2 text-xs font-semibold px-2 py-0.5 rounded-full"
             style={{

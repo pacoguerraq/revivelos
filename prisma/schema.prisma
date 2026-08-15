@@ -27,6 +27,14 @@ enum JobTier {
   PAID
 }
 
+// Un job RESTORE pasa RESTORING → DONE.
+// Un job ANIMATE encadena dos llamadas a fal: RESTORING → ANIMATING → DONE.
+enum JobStage {
+  RESTORING
+  ANIMATING
+  DONE
+}
+
 enum CreditReason {
   RESTORE
   ANIMATE
@@ -45,17 +53,32 @@ model User {
   transactions CreditTransaction[]
 }
 
+// Segunda capa antiabuso del free tier, además de User.freeUsed: el id es un
+// hash (canvas + características del navegador) que el cliente calcula y
+// envía. No sobrevive a un cambio de navegador, pero sí a incógnito/borrar
+// cookies dentro del mismo navegador — que es el caso de abuso más común.
+model DeviceFingerprint {
+  id        String   @id
+  freeUsed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Job {
   id          String    @id @default(cuid())
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status      JobStatus @default(PENDING)
-  type        JobType
-  tier        JobTier
-  inputUrl    String
-  outputUrl   String?
-  watermarked Boolean   @default(false)
-  error       String?
+  status       JobStatus @default(PENDING)
+  type         JobType
+  tier         JobTier
+  stage        JobStage  @default(RESTORING)
+  inputUrl     String
+  outputUrl    String?
+  restoredUrl  String? // salida intermedia de la restauración; entrada del video en jobs ANIMATE
+  watermarked  Boolean   @default(false)
+  falRequestId String?   @unique // correlaciona el webhook de fal; se reescribe en cada salto de etapa
+  deviceFingerprint String? // fingerprint que reclamó la restauración gratis, si aplica — permite revertirla si el job falla
+  error        String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

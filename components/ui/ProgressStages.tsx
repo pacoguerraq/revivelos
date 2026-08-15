@@ -9,18 +9,17 @@ interface Stage {
   sublabel: string
 }
 
-const STAGES: Record<JobType, Stage[]> = {
-  restore: [
-    { label: 'Analizando tu foto', sublabel: 'Leyendo cada detalle con cuidado…' },
-    { label: 'Reparando daños', sublabel: 'Eliminando rasgaduras y manchas del tiempo…' },
-    { label: 'Agregando color', sublabel: 'Devolviendo la vida a cada tono de piel…' },
-  ],
-  animate: [
-    { label: 'Analizando tu foto', sublabel: 'Identificando rostros y siluetas…' },
-    { label: 'Calculando movimiento', sublabel: 'Diseñando animaciones naturales…' },
-    { label: 'Generando el video', sublabel: 'Dando vida a tus recuerdos…' },
-  ],
-}
+const RESTORE_STAGES: Stage[] = [
+  { label: 'Analizando tu foto', sublabel: 'Leyendo cada detalle con cuidado…' },
+  { label: 'Reparando daños', sublabel: 'Eliminando rasgaduras y manchas del tiempo…' },
+  { label: 'Agregando color', sublabel: 'Devolviendo la vida a cada tono de piel…' },
+]
+
+const ANIMATE_STAGES: Stage[] = [
+  { label: 'Preparando el movimiento', sublabel: 'Identificando rostros y siluetas…' },
+  { label: 'Calculando la animación', sublabel: 'Diseñando gestos naturales, uno por uno…' },
+  { label: 'Generando el video', sublabel: 'Esto toma varios minutos — vale la pena…' },
+]
 
 const WARM_MESSAGES = [
   'Cada foto guarda una historia que merece ser contada.',
@@ -30,11 +29,20 @@ const WARM_MESSAGES = [
   'Trabajamos con respeto y cariño en cada imagen.',
 ]
 
+const ANIMATE_WARM_MESSAGES = [
+  ...WARM_MESSAGES,
+  'Los videos tardan más que las fotos — la animación se calcula cuadro por cuadro.',
+  'No cierres esta pantalla. Cuando vuelvas, tu video estará listo.',
+]
+
 const POLL_INTERVAL_MS = 2_000
 
 export function ProgressStages({ jobId, type }: { jobId: string; type: JobType }) {
   const router = useRouter()
-  const stages = STAGES[type]
+  const isAnimate = type === 'animate'
+  const [phase, setPhase] = useState<'restoring' | 'animating'>('restoring')
+  const stages = phase === 'animating' ? ANIMATE_STAGES : RESTORE_STAGES
+  const messages = isAnimate ? ANIMATE_WARM_MESSAGES : WARM_MESSAGES
   const [currentStage, setCurrentStage] = useState(0)
   const [messageIdx, setMessageIdx] = useState(0)
   const [dots, setDots] = useState('')
@@ -42,7 +50,7 @@ export function ProgressStages({ jobId, type }: { jobId: string; type: JobType }
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const dotsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Polling del estado del job
+  // Polling del estado real del job contra la DB
   useEffect(() => {
     const poll = async () => {
       try {
@@ -52,13 +60,19 @@ export function ProgressStages({ jobId, type }: { jobId: string; type: JobType }
 
         if (job.status === 'completed') {
           clearInterval(intervalRef.current ?? undefined)
-          // Pequeña pausa para que el usuario vea la etapa final
-          setTimeout(() => router.push(`/resultado/${jobId}`), 800)
+          setTimeout(() => {
+            router.push(`/resultado/${jobId}`)
+            router.refresh()
+          }, 800)
         } else if (job.status === 'failed') {
           clearInterval(intervalRef.current ?? undefined)
           router.push(`/resultado/${jobId}`)
-        } else if (job.status === 'processing' && currentStage === 0) {
-          setCurrentStage(1)
+          router.refresh() // el fallo reembolsó el crédito — refresca el badge del Header
+        } else if (job.stage === 'animating' && phase !== 'animating') {
+          // La restauración terminó de verdad — pasamos a la fase de animación
+          // y reiniciamos el avance visual de etapas.
+          setPhase('animating')
+          setCurrentStage(0)
         }
       } catch {
         // silencioso, reintentará en el siguiente tick
@@ -69,23 +83,23 @@ export function ProgressStages({ jobId, type }: { jobId: string; type: JobType }
     intervalRef.current = setInterval(poll, POLL_INTERVAL_MS)
 
     return () => { clearInterval(intervalRef.current ?? undefined) }
-  }, [jobId, router, currentStage])
+  }, [jobId, router, phase])
 
-  // Avance simulado de etapas (puramente visual)
+  // Avance simulado de etapas dentro de la fase actual (puramente visual)
   useEffect(() => {
     stageTimerRef.current = setInterval(() => {
       setCurrentStage((s) => (s < stages.length - 1 ? s + 1 : s))
-    }, 3_500)
+    }, phase === 'animating' ? 20_000 : 3_500)
     return () => { clearInterval(stageTimerRef.current ?? undefined) }
-  }, [stages.length])
+  }, [stages.length, phase])
 
   // Rotación de mensajes cálidos
   useEffect(() => {
     const t = setInterval(() => {
-      setMessageIdx((i) => (i + 1) % WARM_MESSAGES.length)
+      setMessageIdx((i) => (i + 1) % messages.length)
     }, 4_000)
     return () => clearInterval(t)
-  }, [])
+  }, [messages.length])
 
   // Animación de puntos
   useEffect(() => {
@@ -108,7 +122,7 @@ export function ProgressStages({ jobId, type }: { jobId: string; type: JobType }
             }}
           />
           <div className="absolute inset-0 flex items-center justify-center text-3xl">
-            {type === 'restore' ? '🎨' : '🎬'}
+            {phase === 'animating' ? '🎬' : '🎨'}
           </div>
         </div>
       </div>
@@ -132,7 +146,7 @@ export function ProgressStages({ jobId, type }: { jobId: string; type: JobType }
         className="text-sm italic px-4 transition-opacity duration-500"
         style={{ color: 'var(--color-bark-muted)', minHeight: '2.5rem' }}
       >
-        "{WARM_MESSAGES[messageIdx]}"
+        &ldquo;{messages[messageIdx]}&rdquo;
       </p>
     </div>
   )

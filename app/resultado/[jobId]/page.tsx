@@ -4,6 +4,7 @@ import { getJobForUser, toApiJob } from '@/lib/jobs'
 import { getUserId } from '@/lib/cookies'
 import { BeforeAfterSlider } from '@/components/ui/BeforeAfterSlider'
 import { ShareButton } from '@/components/ui/ShareButton'
+import { DownloadButton } from '@/components/ui/DownloadButton'
 
 export const metadata = {
   title: 'Tu foto restaurada — Revívelos',
@@ -29,6 +30,8 @@ export default async function ResultadoPage({ params }: Props) {
     return <ErrorView />
   }
 
+  const isVideo = job.type === 'animate'
+
   if (job.status !== 'completed' || !job.outputUrl) {
     return <StillProcessingView jobId={jobId} />
   }
@@ -47,25 +50,38 @@ export default async function ResultadoPage({ params }: Props) {
           </h1>
           <p style={{ color: 'var(--color-bark-muted)' }}>
             {job.watermarked
-              ? 'Esta es una vista previa. Desbloquea la versión completa en alta calidad y sin marca de agua.'
+              ? 'Esta es una vista previa gratuita, en baja resolución.'
               : 'Aquí está tu resultado en alta calidad.'}
           </p>
         </div>
 
-        {/* Slider antes/después */}
+        {/* Resultado: video animado o slider antes/después */}
         <div
           className="rounded-xl overflow-hidden mb-6"
           style={{ boxShadow: 'var(--shadow-warm-lg)', border: '1px solid var(--color-sepia-100)' }}
         >
-          <BeforeAfterSlider
-            beforeSrc={job.inputUrl}
-            afterSrc={job.outputUrl}
-            beforeLabel="Original"
-            afterLabel="Restaurada"
-            beforeFilter="grayscale(85%) contrast(0.9)"
-            afterFilter="sepia(20%) saturate(1.3) brightness(1.05) contrast(1.05)"
-            aspectRatio="4/3"
-          />
+          {isVideo ? (
+            <video
+              src={job.outputUrl ?? undefined}
+              autoPlay
+              loop
+              muted
+              playsInline
+              controls
+              className="w-full h-full"
+              style={{ aspectRatio: '4/3', objectFit: 'cover', background: '#000' }}
+            />
+          ) : (
+            <BeforeAfterSlider
+              beforeSrc={job.inputUrl}
+              afterSrc={job.outputUrl}
+              beforeLabel="Original"
+              afterLabel="Restaurada"
+              beforeFilter="grayscale(85%) contrast(0.9)"
+              afterFilter="sepia(20%) saturate(1.3) brightness(1.05) contrast(1.05)"
+              aspectRatio="4/3"
+            />
+          )}
         </div>
 
         {/* Marca de agua notice */}
@@ -78,25 +94,23 @@ export default async function ResultadoPage({ params }: Props) {
               Vista previa gratuita
             </p>
             <p className="text-sm mb-4" style={{ color: 'var(--color-bark-muted)' }}>
-              Esta versión tiene marca de agua y resolución reducida. Con 1 crédito obtienes la foto
-              en alta calidad, lista para imprimir o compartir.
+              Esta foto de prueba tiene marca de agua y resolución reducida. Para la versión en alta
+              calidad, sin marca de agua y lista para imprimir, vuelve a subirla — se cobra 1 crédito.
             </p>
-            <Link href="/paquetes" className="btn btn-primary" style={{ fontSize: '1rem' }}>
-              Desbloquear en alta calidad · 1 crédito
+            <Link href="/crear" className="btn btn-primary" style={{ fontSize: '1rem' }}>
+              Restaurar en alta calidad
             </Link>
           </div>
         )}
 
         {/* Acciones */}
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
-          {!job.watermarked && (
-            <a
+          {!job.watermarked && job.outputUrl && (
+            <DownloadButton
               href={job.outputUrl}
-              download={`revivelos-${jobId}.jpg`}
-              className="btn btn-primary"
-            >
-              ⬇ Descargar foto
-            </a>
+              filename={`revivelos-${jobId}.${isVideo ? 'mp4' : 'jpg'}`}
+              label={isVideo ? 'Descargar video' : 'Descargar foto'}
+            />
           )}
           <Link href="/crear" className="btn btn-secondary">
             Restaurar otra foto
@@ -131,7 +145,7 @@ function ErrorView() {
           Algo salió mal
         </h1>
         <p className="mb-8" style={{ color: 'var(--color-bark-muted)' }}>
-          Ocurrió un error al procesar tu foto. Lo sentimos mucho. No se te cobró nada.
+          Ocurrió un error al procesar tu foto. Lo sentimos mucho. Ya te devolvimos el crédito, no se te cobró nada.
         </p>
         <Link href="/crear" className="btn btn-primary">
           Intentar de nuevo

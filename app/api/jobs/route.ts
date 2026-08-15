@@ -1,28 +1,10 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getUserId } from '@/lib/cookies'
 import { ensureUser, InsufficientCreditsError } from '@/lib/credits'
-import { createJobAndCharge, updateJobStatus } from '@/lib/jobs'
+import { createJobAndCharge, failJobAndRefund, markSubmitted } from '@/lib/jobs'
 import { storage } from '@/lib/storage'
+import { submitRestore, uploadToFal } from '@/lib/fal'
 import type { JobType } from '@/lib/types'
-
-const MOCK_DELAY_PROCESSING_MS = 2_000
-const MOCK_DELAY_COMPLETE_MS = 11_000
-
-function simulateMockProcessing(jobId: string, inputUrl: string) {
-  // pending → processing
-  setTimeout(() => {
-    updateJobStatus(jobId, { status: 'PROCESSING' }).catch(() => {})
-  }, MOCK_DELAY_PROCESSING_MS)
-
-  // processing → completed
-  // TODO: integrar fal.ai — reemplazar este bloque con webhook de fal.ai
-  setTimeout(() => {
-    updateJobStatus(jobId, {
-      status: 'COMPLETED',
-      outputUrl: inputUrl, // mock: misma imagen; el cliente aplica filtros CSS
-    }).catch(() => {})
-  }, MOCK_DELAY_COMPLETE_MS)
-}
 
 export async function POST(request: NextRequest) {
   const userId = await getUserId()
@@ -41,6 +23,7 @@ export async function POST(request: NextRequest) {
 
   const type = formData.get('type') as JobType
   const photo = formData.get('photo') as File | null
+  const fingerprint = formData.get('fingerprint')
 
   if (!['restore', 'animate'].includes(type)) {
     return NextResponse.json({ error: 'Tipo de acción inválido' }, { status: 400 })
@@ -53,16 +36,22 @@ export async function POST(request: NextRequest) {
   await ensureUser(userId)
 
   const imageBuffer = new Uint8Array(await photo.arrayBuffer())
+  const photoContentType = photo.type || 'image/jpeg'
+  const extension = photoContentType.split('/')[1]?.split('+')[0] || 'jpg'
   const blobUrl = await storage.put(
-    `jobs/${userId}/${crypto.randomUUID()}`,
+    `jobs/${userId}/${crypto.randomUUID()}-input.${extension}`,
     imageBuffer,
-    photo.type || 'image/jpeg',
+    photoContentType,
   )
 
+  let job
   try {
-    const job = await createJobAndCharge({ userId, type, inputUrl: blobUrl })
-    simulateMockProcessing(job.id, job.inputUrl)
-    return NextResponse.json({ jobId: job.id }, { status: 201 })
+    job = await createJobAndCharge({
+      userId,
+      type,
+      inputUrl: blobUrl,
+      fingerprint: typeof fingerprint === 'string' && fingerprint ? fingerprint : undefined,
+    })
   } catch (error) {
     await storage.delete(blobUrl).catch(() => {})
     if (error instanceof InsufficientCreditsError) {
@@ -73,4 +62,18 @@ export async function POST(request: NextRequest) {
     }
     throw error
   }
+
+  // El job ya existe y ya se cobró. Si el envío a fal falla, se reembolsa
+  // y se devuelve 201 igual: el cliente lo verá FAILED al hacer polling.
+  try {
+    const falImageUrl = await uploadToFal(imageBuffer, photoContentType)
+    const tier = job.tier as 'FREE' | 'PAID'
+    const requestId = await submitRestore(falImageUrl, tier)
+    await markSubmitted(job.id, requestId)
+  } catch (error) {
+    console.error('No se pudo enviar el job a fal', error)
+    await failJobAndRefund(job.id, 'No se pudo iniciar el procesamiento')
+  }
+
+  return NextResponse.json({ jobId: job.id }, { status: 201 })
 }
