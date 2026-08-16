@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect, type DragEvent, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { CameraIcon } from '@/components/icons/CameraIcon'
 import { PaletteIcon } from '@/components/icons/PaletteIcon'
 import { FilmIcon } from '@/components/icons/FilmIcon'
@@ -43,6 +44,7 @@ export function PhotoUploader() {
   const [action, setAction] = useState<ActionType>('restore')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [creditError, setCreditError] = useState(false)
+  const [freeTierUnavailable, setFreeTierUnavailable] = useState(false)
   const fingerprintRef = useRef<string>('')
 
   useEffect(() => {
@@ -82,6 +84,7 @@ export function PhotoUploader() {
     setIsSubmitting(true)
     setError(null)
     setCreditError(false)
+    setFreeTierUnavailable(false)
 
     try {
       const formData = new FormData()
@@ -94,6 +97,7 @@ export function PhotoUploader() {
 
       if (!res.ok) {
         if (data.code === 'INSUFFICIENT_CREDITS') { setCreditError(true) }
+        else if (data.code === 'FREE_TIER_UNAVAILABLE') { setFreeTierUnavailable(true) }
         else { setError(data.error ?? 'Ocurrió un error. Intenta de nuevo.') }
         return
       }
@@ -163,9 +167,22 @@ export function PhotoUploader() {
             style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: 'var(--color-error)' }}
           >
             No tienes suficientes créditos.{' '}
-            <a href="/#precios" style={{ color: 'var(--color-amber)', fontWeight: 600 }}>
+            <Link href="/#precios" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
               Ver paquetes
-            </a>
+            </Link>
+          </div>
+        )}
+
+        {freeTierUnavailable && (
+          <div
+            className="mt-4 p-4 rounded-lg text-sm"
+            style={{ background: 'var(--color-amber-50)', border: '1px solid var(--color-sepia-200)', color: 'var(--color-bark)' }}
+          >
+            Hoy ya alcanzamos el límite de pruebas gratuitas. Vuelve mañana o{' '}
+            <Link href="/#precios" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+              compra créditos
+            </Link>{' '}
+            para continuar.
           </div>
         )}
 

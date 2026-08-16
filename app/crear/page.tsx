@@ -1,7 +1,14 @@
 import { PhotoUploader } from '@/components/ui/PhotoUploader'
+import { LockIcon } from '@/components/icons/LockIcon'
+
+const description =
+  'Sube una foto antigua de tu familia y elige si quieres restaurarla y colorearla, o convertirla en un video animado. La primera restauración es gratis.'
 
 export const metadata = {
-  title: 'Sube tu foto — Revívelos',
+  title: 'Sube tu foto',
+  description,
+  alternates: { canonical: '/crear' },
+  openGraph: { title: 'Sube tu foto — Revívelos', description },
 }
 
 export default function CrearPage() {
@@ -26,10 +33,20 @@ export default function CrearPage() {
 
         {/* Garantía de privacidad */}
         <p
-          className="text-center text-xs mt-8"
+          className="text-center text-xs mt-8 flex items-center justify-center gap-1.5"
           style={{ color: 'var(--color-sepia-300)' }}
         >
-          🔒 Tus fotos son privadas. Las eliminamos de nuestros servidores en 30 días.
+          <LockIcon size={13} />
+          Tus fotos son privadas. Las eliminamos de nuestros servidores en 30 días.
+        </p>
+
+        {/* Aviso de IA — visible en el sitio, no solo en los términos */}
+        <p
+          className="text-center text-xs mt-2"
+          style={{ color: 'var(--color-sepia-300)', maxWidth: 440, margin: '0.5rem auto 0' }}
+        >
+          El resultado lo genera un modelo de inteligencia artificial: puede variar entre intentos y, en
+          zonas muy dañadas, reconstruye detalles que quizá no correspondan exactamente a la foto original.
         </p>
       </div>
     </div>

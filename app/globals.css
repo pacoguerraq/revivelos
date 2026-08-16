@@ -7,8 +7,8 @@
   --color-sepia-100: #EDE0CC;
   --color-sepia-200: #D9C4A8;
   --color-sepia-300: #C9A87C;
-  --color-amber: #D4850A;
-  --color-amber-dark: #A8640A;
+  --color-amber: #A8640A;
+  --color-amber-dark: #8A5208;
   --color-amber-50: #FEF3E2;
   --color-bark: #3D2B1F;
   --color-bark-muted: #7A5C45;
@@ -29,7 +29,7 @@
   /* Sombras */
   --shadow-warm: 0 2px 16px rgba(61, 43, 31, 0.10);
   --shadow-warm-lg: 0 8px 40px rgba(61, 43, 31, 0.14);
-  --shadow-amber: 0 4px 20px rgba(212, 133, 10, 0.30);
+  --shadow-amber: 0 4px 20px rgba(168, 100, 10, 0.30);
 }
 
 /* Base */
@@ -95,7 +95,11 @@ h1, h2, h3, h4 {
 
 .btn-secondary {
   background-color: transparent;
-  color: var(--color-amber);
+  /* Texto en amber-dark, no amber: amber solo da 4.34:1 sobre crema/blanco
+     cálido — por debajo del 4.5:1 que pide WCAG AA para texto normal.
+     El borde sí puede quedarse en amber (4.34:1 supera el 3:1 que aplica
+     a elementos no textuales). */
+  color: var(--color-amber-dark);
   border: 2px solid var(--color-amber);
 }
 .btn-secondary:hover { background-color: var(--color-amber-50); }

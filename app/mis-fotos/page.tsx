@@ -2,19 +2,23 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { toApiJob } from '@/lib/jobs'
+import { toApiJob, RETENTION_DAYS } from '@/lib/jobs'
 import { DownloadButton } from '@/components/ui/DownloadButton'
 import { FilmIcon } from '@/components/icons/FilmIcon'
 import { PlayIcon } from '@/components/icons/PlayIcon'
 import { CameraIcon } from '@/components/icons/CameraIcon'
 import type { Job } from '@/lib/types'
 
+const description = 'Tu galería de fotos restauradas y videos animados en Revívelos.'
+
 export const metadata = {
-  title: 'Mis fotos — Revívelos',
+  title: 'Mis fotos',
+  description,
+  robots: { index: false, follow: false },
+  openGraph: { title: 'Mis fotos — Revívelos', description },
 }
 
 const PAGE_SIZE = 20
-const RETENTION_DAYS = 30
 
 interface Props {
   searchParams: Promise<{ cursor?: string }>
@@ -24,7 +28,18 @@ export default async function MisFotosPage({ searchParams }: Props) {
   const session = await auth()
   if (!session?.user?.id) redirect('/entrar')
 
-  const { cursor } = await searchParams
+  const { cursor: rawCursor } = await searchParams
+
+  // Prisma ubica la fila del cursor por su id ÚNICO, sin aplicar el `where`
+  // — así que un cursor con el id de un job ajeno igual "funciona" como
+  // punto de partida (no expone los datos del otro job, el resultado sigue
+  // filtrado por userId, pero sí deja usar un id arbitrario como oráculo de
+  // existencia). Se valida la propiedad del cursor antes de usarlo.
+  let cursor: string | undefined
+  if (rawCursor) {
+    const cursorJob = await prisma.job.findUnique({ where: { id: rawCursor }, select: { userId: true } })
+    if (cursorJob?.userId === session.user.id) cursor = rawCursor
+  }
 
   const rawJobs = await prisma.job.findMany({
     where: { userId: session.user.id, status: 'COMPLETED' },

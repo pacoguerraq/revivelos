@@ -1,10 +1,21 @@
+import { redirect } from 'next/navigation'
 import { signIn } from '@/lib/auth'
 import { GoogleIcon } from '@/components/icons/GoogleIcon'
 import { CameraIcon } from '@/components/icons/CameraIcon'
 
+const description = 'Entra a tu cuenta de Revívelos con Google o con un enlace a tu correo. Sin contraseñas.'
+
 export const metadata = {
-  title: 'Entrar — Revívelos',
+  title: 'Entrar',
+  description,
+  alternates: { canonical: '/entrar' },
+  openGraph: { title: 'Entrar — Revívelos', description },
 }
+
+// Validación simple y deliberadamente permisiva — solo descarta basura
+// obvia. El `type="email"` del navegador ya ayuda, pero es trivial de
+// saltarse (POST directo), así que el servidor no puede confiar en él.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 async function googleSignIn() {
   'use server'
@@ -14,11 +25,19 @@ async function googleSignIn() {
 async function emailSignIn(formData: FormData) {
   'use server'
   const email = formData.get('email')
-  if (typeof email !== 'string' || !email) return
-  await signIn('resend', { email, redirectTo: '/' })
+  if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
+    redirect('/entrar?error=correo-invalido')
+  }
+  await signIn('resend', { email: email.trim().toLowerCase(), redirectTo: '/' })
 }
 
-export default function EntrarPage() {
+interface Props {
+  searchParams: Promise<{ error?: string }>
+}
+
+export default async function EntrarPage({ searchParams }: Props) {
+  const { error } = await searchParams
+
   return (
     <div className="py-16 sm:py-24">
       <div className="section-wrap" style={{ maxWidth: 420, margin: '0 auto' }}>
@@ -53,6 +72,15 @@ export default function EntrarPage() {
           <span className="text-sm" style={{ color: 'var(--color-bark-muted)' }}>o</span>
           <div style={{ flex: 1, height: 1, background: 'var(--color-sepia-100)' }} />
         </div>
+
+        {error === 'correo-invalido' && (
+          <p
+            className="text-sm text-center mb-4 p-3 rounded-lg"
+            style={{ color: 'var(--color-error)', background: '#FEF2F2', border: '1px solid #FECACA' }}
+          >
+            Ese correo no se ve válido. Revísalo e intenta de nuevo.
+          </p>
+        )}
 
         <form action={emailSignIn}>
           <label

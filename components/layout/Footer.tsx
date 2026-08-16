@@ -29,9 +29,12 @@ export function Footer() {
           <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
             {[
               { href: '/crear', label: 'Revive una foto' },
+              { href: '/restaurar-fotos-antiguas', label: 'Restaurar fotos' },
+              { href: '/animar-fotos-en-video', label: 'Animar en video' },
               { href: '/#precios', label: 'Precios' },
               { href: '/#como-funciona', label: 'Cómo funciona' },
               { href: '/#preguntas', label: 'Preguntas frecuentes' },
+              { href: '/acerca', label: 'Acerca de' },
             ].map((link) => (
               <Link
                 key={link.href}
@@ -45,8 +48,26 @@ export function Footer() {
           </nav>
         </div>
 
+        {/* Legales */}
+        <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-6 pt-6" style={{ borderTop: '1px solid var(--color-sepia-100)' }}>
+          {[
+            { href: '/privacidad', label: 'Aviso de privacidad' },
+            { href: '/terminos', label: 'Términos y condiciones' },
+            { href: '/reembolsos', label: 'Reembolsos' },
+          ].map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="text-xs"
+              style={{ color: 'var(--color-sepia-300)', textDecoration: 'none' }}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+
         <p
-          className="text-center text-xs mt-8"
+          className="text-center text-xs mt-6"
           style={{ color: 'var(--color-sepia-300)' }}
         >
           © {new Date().getFullYear()} Revívelos · Hecho con cariño en México

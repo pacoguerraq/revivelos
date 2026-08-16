@@ -1,11 +1,28 @@
 import { prisma } from './db'
-import { InsufficientCreditsError } from './credits'
+import { FreeTierUnavailableError, InsufficientCreditsError } from './credits'
 import { RESTORE_COST, ANIMATE_COST } from './pricing'
 import type { Job as PrismaJob } from '@prisma/client'
 import type { Job, JobStage, JobStatus, JobType } from './types'
 
 const TYPE_TO_PRISMA = { restore: 'RESTORE', animate: 'ANIMATE' } as const
 const PROCESSING_TIMEOUT_MS = 15 * 60 * 1000
+
+// Fuente única: la fecha de borrado que /mis-fotos le muestra al usuario y
+// el corte que usa app/api/cron/cleanup deben coincidir siempre.
+export const RETENTION_DAYS = 30
+
+// Kill switch de emergencia: apaga el free tier sin necesidad de deploy.
+// Cualquier valor distinto a la cadena 'false' se toma como "activado".
+const FREE_TIER_ENABLED = process.env.FREE_TIER_ENABLED !== 'false'
+
+// Tope conservador por defecto (200 previews/día ≈ $174 MXN de gasto en
+// fal con Nano Banana normal en el peor caso). Ajustable sin deploy vía env.
+const FREE_TIER_DAILY_CAP = Number(process.env.FREE_TIER_DAILY_CAP) || 200
+
+function startOfTodayUTC(): Date {
+  const now = new Date()
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+}
 
 // El job en DB guarda URLs de blob reales; nunca se exponen directo al
 // cliente — todo pasa por el proxy /api/image/[jobId] que valida dueño.
@@ -49,6 +66,20 @@ export async function createJobAndCharge(params: {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } })
     let isFreeRestore = type === 'restore' && !user.freeUsed
     let claimedFingerprint: string | null = null
+
+    // Tope global de gasto diario del free tier. Se evalúa solo cuando esta
+    // generación en particular sería gratuita — nunca toca el camino de
+    // pago, así que quien ya tiene crédito siempre recibe su resultado.
+    // Se lanza un error distinto (no se degrada a PAID en silencio) para que
+    // el usuario vea un mensaje honesto en vez de un cobro inesperado.
+    if (isFreeRestore) {
+      if (!FREE_TIER_ENABLED) throw new FreeTierUnavailableError()
+
+      const freeToday = await tx.job.count({
+        where: { tier: 'FREE', createdAt: { gte: startOfTodayUTC() } },
+      })
+      if (freeToday >= FREE_TIER_DAILY_CAP) throw new FreeTierUnavailableError()
+    }
 
     if (isFreeRestore && fingerprint) {
       const claimed = await tx.$executeRaw`

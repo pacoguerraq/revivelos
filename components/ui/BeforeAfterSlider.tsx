@@ -1,16 +1,22 @@
 'use client'
 
 import { useRef, useState, useCallback } from 'react'
+import Image from 'next/image'
 
 interface BeforeAfterSliderProps {
   beforeSrc: string
   afterSrc: string
   beforeLabel?: string
   afterLabel?: string
+  beforeAlt?: string
+  afterAlt?: string
   beforeFilter?: string
   afterFilter?: string
   aspectRatio?: string
   className?: string
+  sizes?: string
+  priority?: boolean
+  unoptimized?: boolean
 }
 
 function ImageFallback({ src }: { src: string }) {
@@ -39,10 +45,15 @@ export function BeforeAfterSlider({
   afterSrc,
   beforeLabel = 'Antes',
   afterLabel = 'Después',
+  beforeAlt,
+  afterAlt,
   beforeFilter,
   afterFilter,
   aspectRatio = '4/3',
   className = '',
+  sizes = '(min-width: 1024px) 480px, 100vw',
+  priority = false,
+  unoptimized = false,
 }: BeforeAfterSliderProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState(50)
@@ -83,10 +94,14 @@ export function BeforeAfterSlider({
           <ImageFallback src={afterSrc} />
         </div>
       ) : (
-        <img
+        <Image
           src={afterSrc}
-          alt={afterLabel}
-          className="absolute inset-0 w-full h-full object-cover"
+          alt={afterAlt ?? afterLabel}
+          fill
+          sizes={sizes}
+          priority={priority}
+          unoptimized={unoptimized}
+          className="object-cover"
           style={afterFilter ? { filter: afterFilter } : undefined}
           draggable={false}
           onError={() => setAfterError(true)}
@@ -101,10 +116,14 @@ export function BeforeAfterSlider({
         {beforeError ? (
           <ImageFallback src={beforeSrc} />
         ) : (
-          <img
+          <Image
             src={beforeSrc}
-            alt={beforeLabel}
-            className="absolute inset-0 w-full h-full object-cover"
+            alt={beforeAlt ?? beforeLabel}
+            fill
+            sizes={sizes}
+            priority={priority}
+            unoptimized={unoptimized}
+            className="object-cover"
             style={beforeFilter ? { filter: beforeFilter } : undefined}
             draggable={false}
             onError={() => setBeforeError(true)}

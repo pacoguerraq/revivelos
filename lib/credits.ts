@@ -8,6 +8,16 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
+// Se lanza cuando el tope diario de vistas previas gratuitas ya se alcanzó,
+// o cuando el kill switch FREE_TIER_ENABLED está apagado. Nunca afecta
+// generaciones de pago — ver createJobAndCharge en lib/jobs.ts.
+export class FreeTierUnavailableError extends Error {
+  constructor() {
+    super('Vista previa gratuita no disponible por hoy')
+    this.name = 'FreeTierUnavailableError'
+  }
+}
+
 // Creación perezosa: la primera vez que aparece un uid de cookie.
 export async function ensureUser(userId: string) {
   await prisma.user.upsert({

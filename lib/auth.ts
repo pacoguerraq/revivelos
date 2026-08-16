@@ -70,6 +70,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Resend({
       apiKey: requireEnv('AUTH_RESEND_KEY'),
       from: requireEnv('EMAIL_FROM'),
+      // Default de Auth.js: 24h. Para un enlace de login sin contraseña,
+      // 24h es una ventana larga si el correo se filtra o queda abierto en
+      // un dispositivo compartido — 1h es suficiente para que alguien de
+      // 60 años revise su correo sin apuro, y acota bastante el riesgo.
+      maxAge: 60 * 60,
       sendVerificationRequest: ({ identifier, url }) => sendMagicLinkEmail({ identifier, url }),
     }),
   ],

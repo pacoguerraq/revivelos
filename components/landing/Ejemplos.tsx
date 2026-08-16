@@ -27,7 +27,10 @@ export function Ejemplos() {
                 afterSrc={ejemplo.afterSrc}
                 beforeLabel="Original"
                 afterLabel="Restaurada"
+                beforeAlt={ejemplo.beforeAlt}
+                afterAlt={ejemplo.afterAlt}
                 aspectRatio="4/3"
+                sizes="(min-width: 640px) 33vw, 100vw"
               />
               <div className="p-4">
                 <p

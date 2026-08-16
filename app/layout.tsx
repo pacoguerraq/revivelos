@@ -1,7 +1,11 @@
 import type { Metadata } from 'next'
 import { Lora, Inter } from 'next/font/google'
+import { Analytics } from '@vercel/analytics/next'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
+import { StickyMobileCta } from '@/components/ui/StickyMobileCta'
+import { MetaPixel } from '@/components/MetaPixel'
 import './globals.css'
 
 const lora = Lora({
@@ -18,15 +22,32 @@ const inter = Inter({
   display: 'swap',
 })
 
+const SITE_DESCRIPTION =
+  'Dale nueva vida a las fotos viejas de tu familia. Restauramos, coloreamos y animamos tus recuerdos con inteligencia artificial. La primera foto es gratis.'
+
 export const metadata: Metadata = {
-  title: 'Revívelos — Restaura las fotos de tu familia',
-  description:
-    'Dale nueva vida a las fotos viejas de tu familia. Restauramos, colorizamos y animamos tus recuerdos con inteligencia artificial. La primera foto es gratis.',
+  // www es la forma canónica: revivelos.com (apex) ya redirige 308 a
+  // www.revivelos.com en Vercel — apuntar aquí al apex generaría
+  // canonicals que a su vez redirigen, lo cual Google penaliza.
+  metadataBase: new URL('https://www.revivelos.com'),
+  title: {
+    default: 'Revívelos — Restaura las fotos de tu familia',
+    template: '%s — Revívelos',
+  },
+  description: SITE_DESCRIPTION,
+  alternates: { canonical: '/' },
   openGraph: {
+    siteName: 'Revívelos',
     title: 'Revívelos — Restaura las fotos de tu familia',
-    description: 'La primera restauración es completamente gratis. Sin registro.',
+    description: SITE_DESCRIPTION,
     locale: 'es_MX',
     type: 'website',
+    url: '/',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Revívelos — Restaura las fotos de tu familia',
+    description: SITE_DESCRIPTION,
   },
 }
 
@@ -37,6 +58,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Header />
         <main>{children}</main>
         <Footer />
+        <StickyMobileCta />
+        <Analytics />
+        <SpeedInsights />
+        <MetaPixel />
       </body>
     </html>
   )

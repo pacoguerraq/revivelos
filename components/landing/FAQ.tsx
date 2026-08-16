@@ -1,7 +1,7 @@
 import { Accordion } from '@/components/ui/Accordion'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 
-const FAQ_ITEMS = [
+export const FAQ_ITEMS = [
   {
     question: '¿De verdad la primera foto es gratis?',
     answer:
@@ -13,9 +13,19 @@ const FAQ_ITEMS = [
       'Nuestra IA analiza cada píxel de tu foto, detecta zonas dañadas, rasgaduras o decoloración, y las reconstruye de manera inteligente. Luego agrega color de forma natural basándose en patrones históricos de la época en que fue tomada la foto. El proceso tarda un par de minutos.',
   },
   {
-    question: '¿Mis fotos están seguras? ¿Las usan para algo más?',
+    question: '¿Mis fotos están seguras? ¿Quién puede verlas?',
     answer:
-      'Tus fotos se usan únicamente para generar el resultado que pediste. No las compartimos, vendemos ni usamos para entrenar modelos de IA. Las eliminamos automáticamente de nuestros servidores después de 30 días.',
+      'Solo tú. Tus fotos se usan únicamente para generar el resultado que pediste — no las compartimos, no las vendemos ni las usamos para entrenar modelos de IA, y nadie más tiene acceso a ellas. Las eliminamos automáticamente de nuestros servidores 30 días después de creadas, así que te recomendamos descargarlas antes de esa fecha.',
+  },
+  {
+    question: '¿Cuánto tarda realmente el proceso?',
+    answer:
+      'Restaurar y colorear una foto toma típicamente entre 10 y 20 segundos. Animar un video tarda más — entre 1 y 3 minutos, porque el movimiento se calcula cuadro por cuadro. En ambos casos puedes ver el avance en pantalla sin cerrar la ventana.',
+  },
+  {
+    question: '¿Qué pasa si el resultado no me gusta?',
+    answer:
+      'Puedes ver la vista previa gratuita antes de gastar cualquier crédito, así que nunca pagas a ciegas. Si una generación falla por un error técnico, el crédito se te devuelve automáticamente. Si el resultado salió mal por otra razón, escríbenos — lo revisamos caso por caso. Todos los detalles están en nuestra política de reembolsos.',
   },
   {
     question: '¿Qué calidad tiene el resultado gratuito vs el de pago?',

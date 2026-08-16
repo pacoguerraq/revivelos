@@ -4,12 +4,27 @@ import { VideoEjemplo } from '@/components/landing/VideoEjemplo'
 import { HowItWorks } from '@/components/landing/HowItWorks'
 import { Pricing } from '@/components/landing/Pricing'
 import { FAQ } from '@/components/landing/FAQ'
+import { JsonLd } from '@/components/JsonLd'
 import Link from 'next/link'
 
 export default function LandingPage() {
   return (
     <>
+      <JsonLd />
       <Hero />
+
+      <p className="text-center text-sm py-2" style={{ color: 'var(--color-bark-muted)' }}>
+        Conoce más sobre{' '}
+        <Link href="/restaurar-fotos-antiguas" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+          restaurar fotos antiguas
+        </Link>{' '}
+        o{' '}
+        <Link href="/animar-fotos-en-video" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+          animar fotos en video
+        </Link>
+        .
+      </p>
+
       <Ejemplos />
       <VideoEjemplo />
       <HowItWorks />

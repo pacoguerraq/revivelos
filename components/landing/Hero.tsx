@@ -18,7 +18,7 @@ export function Hero() {
           <div className="flex-1 text-center lg:text-left max-w-xl mx-auto lg:mx-0">
             <p
               className="font-semibold uppercase mb-4"
-              style={{ color: 'var(--color-amber)', letterSpacing: '0.1em', fontSize: '0.8rem' }}
+              style={{ color: 'var(--color-amber-dark)', letterSpacing: '0.1em', fontSize: '0.8rem' }}
             >
               Restauración con inteligencia artificial
             </p>
@@ -66,7 +66,11 @@ export function Hero() {
                 afterSrc={HERO_AFTER}
                 beforeLabel="Antes"
                 afterLabel="Después"
+                beforeAlt="Foto de familia antigua, dañada y sin color"
+                afterAlt="La misma foto de familia restaurada, sin daños y con color natural"
                 aspectRatio="4/3"
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                priority
               />
             </div>
             <p className="text-center mt-3" style={{ fontSize: '0.75rem', color: 'var(--color-sepia-300)' }}>

@@ -6,8 +6,13 @@ import { BeforeAfterSlider } from '@/components/ui/BeforeAfterSlider'
 import { ShareButton } from '@/components/ui/ShareButton'
 import { DownloadButton } from '@/components/ui/DownloadButton'
 
+const description = 'El resultado de tu restauración o animación con Revívelos.'
+
 export const metadata = {
-  title: 'Tu foto restaurada — Revívelos',
+  title: 'Tu foto restaurada',
+  description,
+  robots: { index: false, follow: false },
+  openGraph: { title: 'Tu foto restaurada — Revívelos', description },
 }
 
 interface Props {
@@ -77,9 +82,12 @@ export default async function ResultadoPage({ params }: Props) {
               afterSrc={job.outputUrl}
               beforeLabel="Original"
               afterLabel="Restaurada"
+              beforeAlt="Tu foto original, antes de restaurarla"
+              afterAlt="Tu foto ya restaurada"
               beforeFilter="grayscale(85%) contrast(0.9)"
               afterFilter="sepia(20%) saturate(1.3) brightness(1.05) contrast(1.05)"
               aspectRatio="4/3"
+              unoptimized
             />
           )}
         </div>
@@ -124,7 +132,7 @@ export default async function ResultadoPage({ params }: Props) {
           style={{ color: 'var(--color-bark-muted)' }}
         >
           ¿Te gustó el resultado? Cuéntale a tu familia.{' '}
-          <Link href="/crear" style={{ color: 'var(--color-amber)', fontWeight: 600 }}>
+          <Link href="/crear" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
             Restaura otra foto gratis →
           </Link>
         </p>

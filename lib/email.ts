@@ -44,7 +44,7 @@ function magicLinkHtml(url: string): string {
             </tr>
             <tr>
               <td style="padding:0 32px 32px 32px; text-align:center;">
-                <a href="${url}" style="display:inline-block; background-color:#D4850A; color:#ffffff; text-decoration:none; font-weight:600; font-size:16px; padding:14px 32px; border-radius:9999px;">
+                <a href="${url}" style="display:inline-block; background-color:#A8640A; color:#ffffff; text-decoration:none; font-weight:600; font-size:16px; padding:14px 32px; border-radius:9999px;">
                   Entrar a Revívelos
                 </a>
               </td>

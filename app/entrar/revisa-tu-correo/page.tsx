@@ -1,8 +1,13 @@
 import Link from 'next/link'
 import { MailIcon } from '@/components/icons/MailIcon'
 
+const description = 'Te enviamos un enlace de acceso a tu correo. Ábrelo para entrar a tu cuenta de Revívelos.'
+
 export const metadata = {
-  title: 'Revisa tu correo — Revívelos',
+  title: 'Revisa tu correo',
+  description,
+  robots: { index: false, follow: false },
+  openGraph: { title: 'Revisa tu correo — Revívelos', description },
 }
 
 interface Props {

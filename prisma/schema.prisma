@@ -100,6 +100,22 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// Rate limiting por ventana fija, sin dependencias nuevas: ya tenemos
+// Postgres, así que no hace falta Redis/Upstash para el volumen de tráfico
+// de este producto (ver AGENTS.md para el trade-off). `key` codifica el
+// recurso + identificador ("jobs:ip:1.2.3.4", "jobs:user:<id>",
+// "auth:email:x@y.com"); windowStart es el inicio de la ventana redondeado
+// hacia abajo. El upsert es atómico: dos requests simultáneas nunca pisan
+// el conteo una de la otra.
+model RateLimitHit {
+  key         String
+  windowStart DateTime
+  count       Int      @default(1)
+
+  @@id([key, windowStart])
+  @@index([windowStart])
+}
+
 // Segunda capa antiabuso del free tier, además de User.freeUsed: el id es un
 // hash (canvas + características del navegador) que el cliente calcula y
 // envía. No sobrevive a un cambio de navegador, pero sí a incógnito/borrar

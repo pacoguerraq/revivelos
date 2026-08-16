@@ -1,11 +1,15 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getUserId } from '@/lib/cookies'
 import { getJobForUser, toApiJob } from '@/lib/jobs'
+import { enforceGeneralRateLimit } from '@/lib/rate-limit'
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> },
 ) {
+  const limited = await enforceGeneralRateLimit(request)
+  if (limited) return limited
+
   const { jobId } = await params
   const userId = await getUserId()
 

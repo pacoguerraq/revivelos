@@ -3,8 +3,13 @@ import { getJobForUser, toApiJob } from '@/lib/jobs'
 import { getUserId } from '@/lib/cookies'
 import { ProgressStages } from '@/components/ui/ProgressStages'
 
+const description = 'Tu foto se está restaurando o animando. Esto toma solo un momento.'
+
 export const metadata = {
-  title: 'Procesando tu foto — Revívelos',
+  title: 'Procesando tu foto',
+  description,
+  robots: { index: false, follow: false },
+  openGraph: { title: 'Procesando tu foto — Revívelos', description },
 }
 
 interface Props {
