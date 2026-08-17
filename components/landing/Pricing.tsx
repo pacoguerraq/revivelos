@@ -1,13 +1,8 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import { PackageCard } from '@/components/ui/PackageCard'
 import { SectionHeading } from '@/components/ui/SectionHeading'
 import { PACKAGES } from '@/lib/pricing'
-
-// Logos de métodos de pago — vacío hasta que Stripe/Mercado Pago estén
-// integrados de verdad (Fase 3). No anunciar un método que no funciona
-// todavía; agregar aquí { name, src } cuando exista.
-const PAYMENT_LOGOS: { name: string; src: string }[] = []
+import { LockIcon } from '@/components/icons/LockIcon'
 
 export function Pricing() {
   return (
@@ -56,13 +51,15 @@ export function Pricing() {
           </Link>
         </p>
 
-        {PAYMENT_LOGOS.length > 0 && (
-          <div className="flex items-center justify-center gap-6 mt-5 flex-wrap">
-            {PAYMENT_LOGOS.map((logo) => (
-              <Image key={logo.name} src={logo.src} alt={logo.name} width={80} height={24} style={{ height: 24, width: 'auto', opacity: 0.7 }} />
-            ))}
-          </div>
-        )}
+        {/* Solo tarjetas por ahora (Stripe Checkout) — Mercado Pago / OXXO / SPEI
+            quedan para una siguiente iteración, ver AGENTS.md. */}
+        <p
+          className="flex items-center justify-center gap-1.5 text-xs mt-5"
+          style={{ color: 'var(--color-sepia-300)' }}
+        >
+          <LockIcon size={13} />
+          Pago seguro con tarjeta, procesado por Stripe
+        </p>
       </div>
     </section>
   )

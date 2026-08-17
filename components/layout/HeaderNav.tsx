@@ -35,10 +35,49 @@ function getInitials(name: string): string {
   return (first + last).toUpperCase()
 }
 
+// Único punto de decisión de qué mostrar en el badge de saldo — nada más
+// en el componente debe volver a decidir esto por su cuenta. Prioridad
+// explícita, en este orden:
+//   1. Créditos > 0 → mostrar el saldo. Quien ya compró no necesita que le
+//      sigan ofreciendo la prueba gratis, aunque freeUsed siga en false
+//      (p.ej. compró sin haber usado nunca su restauración gratuita).
+//   2. Sin créditos y la gratis sigue disponible → "1 gratis".
+//   3. Sin créditos y la gratis ya se usó → invitar a comprar.
+type BadgeState = 'credits' | 'free' | 'buy'
+
+function getBadgeState(freeUsed: boolean, credits: number): BadgeState {
+  if (credits > 0) return 'credits'
+  if (!freeUsed) return 'free'
+  return 'buy'
+}
+
 function CreditsBadge({ freeUsed, credits, className = '' }: { freeUsed: boolean; credits: number; className?: string }) {
-  const showFreeAvailable = !freeUsed
-  const label = showFreeAvailable ? '1 gratis' : `${credits} crédito${credits !== 1 ? 's' : ''}`
-  const mobileLabel = showFreeAvailable ? '1' : String(credits)
+  const state = getBadgeState(freeUsed, credits)
+
+  const content: Record<BadgeState, { label: string; mobileLabel: string; title: string; bg: string; color: string }> = {
+    credits: {
+      label: `${credits} crédito${credits !== 1 ? 's' : ''}`,
+      mobileLabel: String(credits),
+      title: `${credits} crédito${credits !== 1 ? 's' : ''} disponible${credits !== 1 ? 's' : ''}`,
+      bg: 'var(--color-sepia-100)',
+      color: 'var(--color-bark-muted)',
+    },
+    free: {
+      label: '1 gratis',
+      mobileLabel: '1',
+      title: 'Tienes 1 restauración gratis disponible',
+      bg: 'var(--color-amber-50)',
+      color: 'var(--color-amber-dark)',
+    },
+    buy: {
+      label: 'Comprar créditos',
+      mobileLabel: 'Comprar',
+      title: 'No te quedan créditos — compra para seguir restaurando fotos',
+      bg: 'var(--color-amber-50)',
+      color: 'var(--color-amber-dark)',
+    },
+  }
+  const { label, mobileLabel, title, bg, color } = content[state]
 
   return (
     <Link
@@ -47,11 +86,11 @@ function CreditsBadge({ freeUsed, credits, className = '' }: { freeUsed: boolean
       style={{
         paddingTop: 6,
         paddingBottom: 6,
-        background: showFreeAvailable ? 'var(--color-amber-50)' : 'var(--color-sepia-100)',
-        color: showFreeAvailable ? 'var(--color-amber-dark)' : 'var(--color-bark-muted)',
+        background: bg,
+        color,
         textDecoration: 'none',
       }}
-      title={showFreeAvailable ? 'Tienes 1 restauración gratis disponible' : `${credits} crédito${credits !== 1 ? 's' : ''} disponible${credits !== 1 ? 's' : ''}`}
+      title={title}
     >
       <span aria-hidden>✦</span>
       <span className="md:hidden">{mobileLabel}</span>

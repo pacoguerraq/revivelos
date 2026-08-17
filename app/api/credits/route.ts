@@ -12,10 +12,6 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(balance)
 }
 
-// TODO: integrar Stripe — reemplazar este handler con verificación de webhook de Stripe
-export async function POST() {
-  return NextResponse.json(
-    { error: 'Pagos no disponibles aún' },
-    { status: 503 },
-  )
-}
+// Comprar créditos ahora es POST /api/checkout (crea la sesión de Stripe
+// Checkout) + POST /api/webhooks/stripe (acredita al confirmarse el pago).
+// Esta ruta ya no necesita un POST propio.

@@ -1,5 +1,7 @@
 import { PhotoUploader } from '@/components/ui/PhotoUploader'
 import { LockIcon } from '@/components/icons/LockIcon'
+import { getUserId } from '@/lib/cookies'
+import { getBalance } from '@/lib/credits'
 
 const description =
   'Sube una foto antigua de tu familia y elige si quieres restaurarla y colorearla, o convertirla en un video animado. La primera restauración es gratis.'
@@ -11,7 +13,10 @@ export const metadata = {
   openGraph: { title: 'Sube tu foto — Revívelos', description },
 }
 
-export default function CrearPage() {
+export default async function CrearPage() {
+  const userId = await getUserId()
+  const balance = await getBalance(userId)
+
   return (
     <div className="py-12 sm:py-20">
       <div className="section-wrap" style={{ maxWidth: 600, margin: '0 auto' }}>
@@ -29,7 +34,7 @@ export default function CrearPage() {
         </div>
 
         {/* Zona de carga */}
-        <PhotoUploader />
+        <PhotoUploader hasCredits={balance.credits > 0} />
 
         {/* Garantía de privacidad */}
         <p

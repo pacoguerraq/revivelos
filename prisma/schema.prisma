@@ -159,6 +159,13 @@ model CreditTransaction {
   reason    CreditReason
   jobId     String?
   job       Job?         @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  // Id de la sesión/pago del proveedor externo (hoy: session.id de Stripe
+  // Checkout; mañana: id de pago de Mercado Pago). La restricción @unique
+  // es lo que garantiza idempotencia ante reintentos del webhook — el
+  // INSERT falla con P2002 en la segunda entrega en vez de depender de un
+  // findFirst previo que sería vulnerable a una carrera entre dos entregas
+  // casi simultáneas. Mismo patrón que Job.falRequestId.
+  externalId String?     @unique
   createdAt DateTime     @default(now())
 
   @@index([userId])

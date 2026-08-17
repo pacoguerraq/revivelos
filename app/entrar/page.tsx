@@ -17,26 +17,36 @@ export const metadata = {
 // saltarse (POST directo), así que el servidor no puede confiar en él.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-async function googleSignIn() {
+// Solo rutas relativas propias del sitio — nunca redirigir a una URL externa
+// que venga de un query param sin validar (open redirect).
+function safeCallbackUrl(value: string | undefined): string {
+  if (value && value.startsWith('/') && !value.startsWith('//')) return value
+  return '/'
+}
+
+async function googleSignIn(formData: FormData) {
   'use server'
-  await signIn('google', { redirectTo: '/' })
+  const callbackUrl = safeCallbackUrl(formData.get('callbackUrl') as string | null ?? undefined)
+  await signIn('google', { redirectTo: callbackUrl })
 }
 
 async function emailSignIn(formData: FormData) {
   'use server'
   const email = formData.get('email')
+  const callbackUrl = safeCallbackUrl(formData.get('callbackUrl') as string | null ?? undefined)
   if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
-    redirect('/entrar?error=correo-invalido')
+    redirect(`/entrar?error=correo-invalido&callbackUrl=${encodeURIComponent(callbackUrl)}`)
   }
-  await signIn('resend', { email: email.trim().toLowerCase(), redirectTo: '/' })
+  await signIn('resend', { email: email.trim().toLowerCase(), redirectTo: callbackUrl })
 }
 
 interface Props {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; callbackUrl?: string }>
 }
 
 export default async function EntrarPage({ searchParams }: Props) {
-  const { error } = await searchParams
+  const { error, callbackUrl: rawCallbackUrl } = await searchParams
+  const callbackUrl = safeCallbackUrl(rawCallbackUrl)
 
   return (
     <div className="py-16 sm:py-24">
@@ -57,6 +67,7 @@ export default async function EntrarPage({ searchParams }: Props) {
         </div>
 
         <form action={googleSignIn}>
+          <input type="hidden" name="callbackUrl" value={callbackUrl} />
           <button
             type="submit"
             className="btn btn-secondary w-full flex items-center justify-center gap-3"
@@ -83,6 +94,7 @@ export default async function EntrarPage({ searchParams }: Props) {
         )}
 
         <form action={emailSignIn}>
+          <input type="hidden" name="callbackUrl" value={callbackUrl} />
           <label
             htmlFor="email"
             className="block text-sm font-semibold mb-2"

@@ -17,6 +17,15 @@ interface BeforeAfterSliderProps {
   sizes?: string
   priority?: boolean
   unoptimized?: boolean
+  // 'cover' (default) recorta para llenar `aspectRatio` — correcto para las
+  // fotos de stock curadas del Hero/Ejemplos, que ya vienen recortadas a
+  // propósito. 'contain' es para la foto real del usuario en /resultado:
+  // ahí no hay control sobre la proporción original, así que en vez de
+  // recortar se mide la relación de aspecto real de la imagen "después" (la
+  // que manda, porque preservamos el encuadre original en el prompt de fal)
+  // y se usa como aspect-ratio del contenedor — se ve completa, sin bandas
+  // vacías ni recortes.
+  objectFit?: 'cover' | 'contain'
 }
 
 function ImageFallback({ src }: { src: string }) {
@@ -54,12 +63,19 @@ export function BeforeAfterSlider({
   sizes = '(min-width: 1024px) 480px, 100vw',
   priority = false,
   unoptimized = false,
+  objectFit = 'cover',
 }: BeforeAfterSliderProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState(50)
   const isDragging = useRef(false)
   const [beforeError, setBeforeError] = useState(false)
   const [afterError, setAfterError] = useState(false)
+  const [naturalRatio, setNaturalRatio] = useState<number | null>(null)
+
+  // Mientras no se conoce la proporción real, se usa `aspectRatio` como
+  // placeholder para no saltar de tamaño cuando la imagen carga.
+  const effectiveAspectRatio = objectFit === 'contain' && naturalRatio ? String(naturalRatio) : aspectRatio
+  const objectFitClass = objectFit === 'contain' ? 'object-contain' : 'object-cover'
 
   const updatePosition = useCallback((clientX: number) => {
     const container = containerRef.current
@@ -73,7 +89,12 @@ export function BeforeAfterSlider({
     <div
       ref={containerRef}
       className={`relative overflow-hidden rounded-lg select-none ${className}`}
-      style={{ aspectRatio, touchAction: 'none', cursor: 'ew-resize' }}
+      style={{
+        aspectRatio: effectiveAspectRatio,
+        touchAction: 'none',
+        cursor: 'ew-resize',
+        background: objectFit === 'contain' ? 'var(--color-sepia-100)' : undefined,
+      }}
       onPointerDown={(e) => {
         isDragging.current = true
         e.currentTarget.setPointerCapture(e.pointerId)
@@ -101,10 +122,15 @@ export function BeforeAfterSlider({
           sizes={sizes}
           priority={priority}
           unoptimized={unoptimized}
-          className="object-cover"
+          className={objectFitClass}
           style={afterFilter ? { filter: afterFilter } : undefined}
           draggable={false}
           onError={() => setAfterError(true)}
+          onLoad={(e) => {
+            if (objectFit !== 'contain' || naturalRatio !== null) return
+            const img = e.currentTarget
+            if (img.naturalWidth && img.naturalHeight) setNaturalRatio(img.naturalWidth / img.naturalHeight)
+          }}
         />
       )}
 
@@ -123,7 +149,7 @@ export function BeforeAfterSlider({
             sizes={sizes}
             priority={priority}
             unoptimized={unoptimized}
-            className="object-cover"
+            className={objectFitClass}
             style={beforeFilter ? { filter: beforeFilter } : undefined}
             draggable={false}
             onError={() => setBeforeError(true)}

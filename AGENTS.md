@@ -101,7 +101,10 @@ prisma/
 lib/
   types.ts                        # Job, CreditBalance — tipos de API (JobStatus/JobType/JobStage en minúscula)
   db.ts                           # singleton de PrismaClient (patrón globalThis)
-  credits.ts                      # ensureUser, getBalance, addCredits, InsufficientCreditsError
+  credits.ts                      # ensureUser, getBalance, addCredits, addCreditsFromPurchase (idempotente vía externalId), InsufficientCreditsError
+  stripe.ts                       # singleton de Stripe (patrón globalThis, igual que db.ts)
+  checkout-client.ts               # startCheckout() — lógica compartida entre PackageCard y /comprar/[packageId]
+  meta-capi.ts                    # sendPurchaseCapiEvent — evento Purchase server-side, best-effort si falta META_CAPI_TOKEN
   jobs.ts                         # createJobAndCharge, markSubmitted, failJobAndRefund, getJobForUser, toApiJob
   storage.ts                      # StorageAdapter — hoy Vercel Blob, put/delete
   fal.ts                          # config de fal, prompts validados, submitRestore/submitAnimate, extractores de payload
@@ -130,18 +133,23 @@ app/
   restaurar-fotos-antiguas/ animar-fotos-en-video/page.tsx # landings SEO por servicio, cada una con su H1/FAQ/canonical propios
   acerca/page.tsx                 # página "por qué existe" — primera persona, sin equipo ni métricas inventadas
   crear/page.tsx                  # sube foto → elige acción → POST /api/jobs
-  entrar/page.tsx                 # login: botón de Google + formulario de magic link (Server Actions)
+  entrar/page.tsx                 # login: botón de Google + formulario de magic link (Server Actions), acepta ?callbackUrl (validado, solo rutas propias)
   entrar/revisa-tu-correo/page.tsx # pantalla post-envío del magic link
   mis-fotos/page.tsx              # galería del usuario autenticado, paginada por cursor
   procesando/[jobId]/page.tsx     # wrapper del poller — mensajes de espera honestos según el tipo
   resultado/[jobId]/page.tsx      # muestra imagen o <video> según Job.type + botones
+  comprar/[packageId]/page.tsx    # destino de callbackUrl tras /entrar — retoma el checkout de ese paquete automáticamente
+  gracias/page.tsx                # post-pago: sondea /api/checkout/status hasta que el webhook confirma; nunca acredita nada
   api/
     auth/[...nextauth]/route.ts   # handlers de Auth.js
     jobs/route.ts                 # POST → sube a Blob y a fal.storage, crea job + descuenta crédito, submitRestore
     jobs/[jobId]/route.ts         # GET → estado del job, valida dueño contra la DB (await params)
-    image/[jobId]/route.ts        # GET → proxy autenticado: valida dueño, hace fetch al blob y reenvía bytes
-    credits/route.ts              # GET → balance real de la DB | POST → 503 (TODO: Stripe)
+    image/[jobId]/route.ts        # GET → proxy autenticado: valida dueño, reenvía Range al blob y streamea la respuesta (206 si aplica) sin bufferear en memoria. v=input/output/poster
+    credits/route.ts              # GET → balance real de la DB
+    checkout/route.ts             # POST → crea sesión de Stripe Checkout (price_data desde lib/pricing.ts), requiere sesión
+    checkout/status/route.ts      # GET → ¿ya existe un CreditTransaction con este externalId? — solo lectura, usada por /gracias
     webhooks/falai/route.ts       # POST → verifica firma, procesa OK/ERROR, encadena restore→animate, reembolsa en fallos
+    webhooks/stripe/route.ts      # POST → verifica firma, acredita créditos idempotente, dispara Purchase por Meta CAPI
     cron/cleanup/route.ts         # GET, protegida por CRON_SECRET — borra blobs+Jobs con más de RETENTION_DAYS, preserva CreditTransaction
 vercel.json                       # cron diario de /api/cron/cleanup
 components/
@@ -160,12 +168,13 @@ components/
   ui/
     BeforeAfterSlider.tsx         # pointer events + clip-path; onError → ImageFallback con ruta
     PhotoUploader.tsx             # drag & drop + preview + selector restore/animate
-    PackageCard.tsx               # calcula equivalencias con calcEquivalencias()
+    PackageCard.tsx               # 'use client' — calcula equivalencias, botón inicia checkout real vía lib/checkout-client.ts
     ProgressStages.tsx            # poller cada 2s, etapas restoring/animating reales → redirige a /resultado/[jobId]
     SectionHeading.tsx            # OBLIGATORIO para h2 de sección — corrige preflight de Tailwind v4
     Accordion.tsx                 # FAQ items con animación max-height
     ShareButton.tsx               # botón de compartir resultado
     DownloadButton.tsx            # descarga vía fetch+blob con loader — necesario para video (varios MB)
+    VideoPlayer.tsx                # 'use client' — <video> sobre /api/image?v=output (con Range), poster = restauración, estado de carga/buffering visible, reintento
     StickyMobileCta.tsx           # CTA fijo en móvil tras pasar el hero, oculto en /crear, /procesando, /resultado
   icons/
     CameraIcon.tsx  FilmIcon.tsx  PaletteIcon.tsx  LockIcon.tsx  DownloadIcon.tsx
@@ -183,15 +192,15 @@ components/
 | Galería `/mis-fotos` | **Funcionando** — requiere sesión, paginación por cursor, aviso de borrado a 30 días |
 | Subida de foto y creación de job | Funcionando — sube a Vercel Blob, persiste en Postgres |
 | Base de datos | **Funcionando** — Prisma + Neon Postgres. `User`, `Job`, `CreditTransaction` |
-| Créditos | **Funcionando** — descuento atómico en transacción (`lib/jobs.ts` `createJobAndCharge`), auditable vía `CreditTransaction` |
-| Almacenamiento de imágenes | **Funcionando** — Vercel Blob (`lib/storage.ts`), servidas solo vía proxy autenticado `/api/image/[jobId]` |
+| Créditos | **Funcionando** — descuento atómico en transacción (`lib/jobs.ts` `createJobAndCharge`), auditable vía `CreditTransaction`. Prioridad de tier corregida: crédito suficiente siempre gana sobre el free tier, ver sección "Prioridad tier PAID vs. FREE" |
+| Almacenamiento de imágenes y video | **Funcionando** — Vercel Blob (`lib/storage.ts`), servidas solo vía proxy autenticado `/api/image/[jobId]`. El proxy reenvía `Range` (206 + `Content-Range`) y streamea sin bufferear en memoria — ver "Entrega de video" en la sección Seguridad para el problema real que esto resolvió y los números medidos |
 | Modelos y prompts de IA | **Funcionando** — integrados en `lib/fal.ts`, validados a mano en el sandbox de fal (ver sección siguiente) y confirmados en vivo contra la API real de fal |
 | Procesamiento | **Funcionando** — cola de fal (`fal.queue.submit`) + webhook (`/api/webhooks/falai`), sin polling síncrono. RESTORE es una llamada; ANIMATE encadena restauración (siempre modelo PAID) → animación, correlacionadas por `Job.falRequestId` (único, se reescribe en cada salto de etapa) |
 | Verificación de webhooks | **Funcionando** — ED25519 contra el JWKS de fal (`lib/fal-verify.ts`), timestamp con ventana de 5 min contra replay |
 | Vista previa gratuita | **Funcionando** — `lib/watermark.ts` (sharp) reduce resolución y aplica marca de agua antes de guardar en Blob |
 | Reembolsos | **Funcionando** — si fal devuelve error, el payload no tiene el formato esperado, o pasan 15 min sin respuesta (timeout perezoso en `getJobForUser`), el job pasa a FAILED y se reembolsa el crédito (o se revierte `freeUsed`) de forma atómica e idempotente |
 | Imágenes de resultado | **Funcionando** — descargadas de fal (URLs `v3.fal.media`, temporales) y re-subidas a Vercel Blob antes de responder al usuario |
-| Pago / Stripe | Sin implementar — `POST /api/credits` devuelve 503. `addCredits()` en `lib/credits.ts` ya existe para cuando se integre. **Es lo único que falta para desplegar a producción — todo lo demás en esta tabla ya está listo.** |
+| Pago / Stripe | **Funcionando (solo tarjetas)** — `POST /api/checkout` crea una sesión de Stripe Checkout hospedada (`price_data` en línea desde `lib/pricing.ts`, nunca Productos/Precios del dashboard); requiere sesión iniciada, un usuario anónimo se manda a `/entrar?callbackUrl=/comprar/[packageId]` y `/comprar/[packageId]` retoma el checkout solo al volver, sin perder el paquete elegido. `POST /api/webhooks/stripe` verifica la firma con `STRIPE_WEBHOOK_SECRET` sobre el body crudo, acredita con `addCreditsFromPurchase()` (`lib/credits.ts`) dentro de una transacción corta, e idempotencia real vía `CreditTransaction.externalId` con restricción `@unique` (el `INSERT` falla con P2002 en un reintento, no un `findFirst` previo). `/gracias` sondea `GET /api/checkout/status` cada 2s hasta que el webhook confirma (o hasta 30s, sin tratarlo como error) y nunca acredita nada por sí misma. `Purchase` se dispara server-side por Meta CAPI (`lib/meta-capi.ts`) si `META_CAPI_TOKEN` está definido; si no, se omite en silencio. Probado en vivo contra la DB real con eventos firmados de Stripe: acreditación exacta una vez, reenvío del mismo webhook sin duplicar, firma inválida rechazada con 400, metadata corrupta (paquete inexistente) ack 200 sin acreditar y logueada para revisión manual, `/api/checkout` sin sesión devuelve 401. **Pendiente de correr contra el sandbox real de Stripe con el Stripe CLI** (la cuenta de la CLI en esta máquina no es la misma que la de `STRIPE_SECRET_KEY` — ver comentario en `.env`) antes de dar por buena la integración de punta a punta con una tarjeta real de prueba. Mercado Pago (OXXO/SPEI) queda fuera de esta iteración a propósito — `addCreditsFromPurchase` ya está diseñada para que un segundo proveedor solo aporte su propio `externalId`, sin rediseñar la acreditación. |
 | Borrado a 30 días | **Funcionando** — `app/api/cron/cleanup/route.ts` + `vercel.json` (cron diario 9:00 UTC). Borra blobs de entrada/salida/intermedios y el `Job` de jobs con más de `RETENTION_DAYS` (30, `lib/jobs.ts`, fuente única compartida con `/mis-fotos`); preserva `CreditTransaction` vía `onDelete: SetNull`. Tolerante a fallos parciales: si un blob falla, ese job completo se deja para la corrida siguiente en vez de arriesgar un blob huérfano. Probado en vivo contra la DB y el Blob reales: job con 31 días de antigüedad (3 blobs: input/restored/output) borrado correctamente, `CreditTransaction` asociado sobrevive con `jobId: null`, job reciente intacto, 401 sin auth o con secreto incorrecto, segunda corrida idempotente (0 jobs encontrados) |
 | Dominio canónico | **Decidido: `www.revivelos.com`** — `revivelos.com` (apex) ya redirige 308 a `www` en Vercel, así que apuntar el canonical al apex generaría un canonical que a su vez redirige. `metadataBase`, `robots.ts`, `sitemap.ts`, `llms.txt`, `JsonLd.tsx` actualizados. `AUTH_URL`/`NEXT_PUBLIC_BASE_URL` de producción deben usar este mismo host — ver checklist de despliegue |
 | Bloqueo de indexación fuera de producción | **Funcionando** — `robots.ts` ahora es dinámico (`headers()`) y compara el `Host` real de la petición contra `www.revivelos.com`; cualquier otro host (incluido el alias autogenerado `*.vercel.app`, que también reporta `VERCEL_ENV=production` y por eso no basta con solo esa variable) recibe `Disallow: /`. Probado en vivo simulando los 3 hosts con `curl -H "Host: ..."` |
@@ -214,7 +223,7 @@ components/
 - **Analítica:** `@vercel/analytics` + `@vercel/speed-insights` instalados y montados en `layout.tsx`.
 - **Meta Pixel:** `components/MetaPixel.tsx`, `next/script` con `strategy="afterInteractive"` — por eso no aparece en el HTML servido por el servidor (`curl`), se inyecta client-side tras hidratar; confirmado por código, no por captura de red en vivo (la extensión de navegador para pruebas no respondió en esta sesión). Dispara `PageView`+`ViewContent` una vez al cargar, y `PageView` de nuevo en cada cambio de ruta client-side. `Purchase` queda pendiente para cuando exista CAPI server-side (Fase 3).
 - **SEO:** `/restaurar-fotos-antiguas`, `/animar-fotos-en-video` (con la limitación honesta de 1-2 personas explícita) y `/acerca` — cada una con su propio H1, metadata y `alternates.canonical`. `llms.txt` servido como texto plano vía Route Handler. `sitemap.ts` actualizado con las 3 páginas nuevas. Páginas privadas/transaccionales (`/mis-fotos`, `/resultado/*`, `/procesando/*`, `/entrar/revisa-tu-correo`) llevan `robots: { index: false, follow: false }` en vez de canonical — ya estaban fuera de `robots.txt`, pero el meta tag evita que aparezcan indexadas sin contenido si alguien las enlaza desde fuera.
-- **Contenido legal adicional:** aviso de IA agregado a `/terminos` (sección 4, ya existía) **y** visible en `/crear` mismo (no solo en la página legal); cláusula de retiro de contenido (`/terminos` sección 5.1, nueva); jurisdicción mexicana sin cláusula de arbitraje (`/terminos` sección 9, ya existía, confirmada sin cambios); aviso de Pixel en `/privacidad` (sección 6, ya existía); garantía de reembolso visible junto a precios (`Pricing.tsx`, nueva, enlaza a `/reembolsos`); espacio reservado para logos de pago condicionado a `PAYMENT_LOGOS.length > 0` (array vacío hoy — no se anuncia Stripe/Mercado Pago hasta que funcionen).
+- **Contenido legal adicional:** aviso de IA agregado a `/terminos` (sección 4, ya existía) **y** visible en `/crear` mismo (no solo en la página legal); cláusula de retiro de contenido (`/terminos` sección 5.1, nueva); jurisdicción mexicana sin cláusula de arbitraje (`/terminos` sección 9, ya existía, confirmada sin cambios); aviso de Pixel en `/privacidad` (sección 6, ya existía); garantía de reembolso visible junto a precios (`Pricing.tsx`, enlaza a `/reembolsos`); línea de "pago seguro con tarjeta, procesado por Stripe" junto a precios ahora que el checkout funciona de verdad.
 
 **Hallazgo de accesibilidad — resuelto (2026-08-16):** la escala ámbar se recorrió un escalón: `--color-amber` tomó el valor que antes tenía `--color-amber-dark` (#A8640A), y `--color-amber-dark` bajó a un tono nuevo (#8A5208) para hover/active. Ratios verificados con `chroma-js` (`chroma.contrast`), no a ojo:
 
@@ -330,12 +339,12 @@ Photorealistic. Preserve the exact facial features and identity of every person.
 - Fallos: `failJobAndRefund()` en `lib/jobs.ts` marca `FAILED` y reembolsa (o revierte `freeUsed`) en una transacción corta sin red, protegida por un `updateMany` condicional para ser idempotente ante reintentos del webhook. Timeout perezoso de 15 min en `getJobForUser` para jobs que nunca reciben webhook.
 - **Pendiente de esta fase:** correr un job ANIMATE real de punta a punta para confirmar el input exacto de `kling-video/.../image-to-video` (ver nota en la tabla de estado). Evaluar recortar el clip a ~3s en loop si la degradación al final del video resulta molesta en pruebas reales.
 
-### Fase 3 — Monetización y growth ← SIGUIENTE (pagos)
-- **Stripe** (tarjetas) + **Mercado Pago** (OXXO, SPEI, tarjetas locales). Los dos, no uno: el comprador de 55 años muchas veces no mete tarjeta.
-- Webhook de pago → acreditar en `CreditTransaction`.
-- **Meta Pixel + CAPI server-side**: disparar `Purchase` desde la API route al confirmar el pago. Sin CAPI el algoritmo optimiza a ciegas y el CPA nunca baja.
+### Fase 3 — Monetización y growth ✅ Stripe hecho, Mercado Pago pendiente
+- **Stripe** (tarjetas) ✅ hecho — `POST /api/checkout` + `POST /api/webhooks/stripe`, ver tabla de estado. **Mercado Pago** (OXXO, SPEI, tarjetas locales) queda para una siguiente iteración: el comprador de 55 años muchas veces no mete tarjeta, así que sigue siendo importante, solo que no bloqueó esta ronda. `addCreditsFromPurchase()` en `lib/credits.ts` ya está diseñada para que agregarlo sea solo un nuevo caller con su propio `externalId`, no una reescritura.
+- Webhook de pago → acreditar en `CreditTransaction` ✅ hecho, idempotente vía `CreditTransaction.externalId` único.
+- **Meta Pixel + CAPI server-side** ✅ hecho — `Purchase` se dispara desde `app/api/webhooks/stripe/route.ts` vía `lib/meta-capi.ts` al confirmar el pago (requiere `META_CAPI_TOKEN`, se omite en silencio si falta). `InitiateCheckout` se dispara del lado del cliente al iniciar el checkout.
 
-El resto de la Fase 3 (cron de limpieza, dominio propio, preparación de producción) ya está hecho — ver "Estado real vs. pendiente" y la sección "Despliegue a producción" más abajo. Lo único que falta para Fase 3 es pagos.
+El resto de la Fase 3 (cron de limpieza, dominio propio, preparación de producción) ya está hecho — ver "Estado real vs. pendiente" y la sección "Despliegue a producción" más abajo. Lo que falta para cerrar la Fase 3 por completo es Mercado Pago, y correr la compra con tarjeta real contra el sandbox de Stripe con la cuenta correcta en la CLI (ver nota en la tabla de estado).
 
 ---
 
@@ -372,6 +381,20 @@ Por eso la vista previa gratuita usa el modelo barato. Esa decisión duplica el 
 
 **Métrica a vigilar en la primera campaña:** costo por foto subida. Si está por debajo de ~$5 MXN y la conversión supera el 3%, el negocio funciona. Si el CPA se dispara, la palanca es la conversión, no el precio.
 
+### Prioridad tier PAID vs. FREE
+
+**Quien tiene crédito suficiente para la operación siempre paga con crédito y recibe PAID — sin importar si su restauración gratis (`freeUsed`) sigue disponible.** El free tier es el último recurso, nunca el primero. Esta es la regla completa, en orden:
+
+1. `user.credits >= costo de la operación` → cobra crédito, tier `PAID`, sin marca de agua. `freeUsed` no se toca.
+2. Si no alcanza el crédito, la operación es `restore` (nunca `animate` — un video jamás cabe en el free tier) y `freeUsed` sigue en `false` → tier `FREE`, con marca de agua, `freeUsed` pasa a `true`.
+3. Si ninguna de las dos aplica → `InsufficientCreditsError` (saldo insuficiente).
+
+**Hubo un incidente real por invertir este orden:** la primera versión decidía `isFreeRestore = type === 'restore' && !user.freeUsed`, sin mirar el saldo — así que cualquier usuario que aún no hubiera gastado su gratis recibía SIEMPRE el resultado barato con marca de agua al pedir una restauración, incluso con crédito de sobra en la cuenta. Un usuario que compró 5 créditos, gastó 3 en un video y pidió una restauración con 2 créditos disponibles recibió una vista previa gratuita en vez de que se le cobrara 1 crédito. Corregido evaluando primero `user.credits >= cost` (`lib/jobs.ts` → `createJobAndCharge`) y solo cayendo a `isFreeRestore` cuando el crédito no alcanza.
+
+**Un solo lugar decide el tier: `createJobAndCharge` en `lib/jobs.ts`.** Nada más en el código — ni la ruta `POST /api/jobs`, ni `PhotoUploader.tsx`, ni ningún componente de UI — vuelve a calcular o adivinar qué tier le va a tocar a un job; el cliente solo manda `type` (`restore`/`animate`), nunca decide qué se le cobra. La etiqueta "Gratis la primera vez" del selector de acción en `/crear` es puramente informativa: `app/crear/page.tsx` lee el saldo real (`getBalance`) y le pasa `hasCredits` a `PhotoUploader`, que muestra "N créditos" en vez de "Gratis" cuando `hasCredits` es `true` — para no prometerle "gratis" a alguien que en realidad va a pagar con crédito. Si ese saldo cambiara entre que se pinta la página y que se sube la foto, la fuente de verdad sigue siendo `createJobAndCharge`; la etiqueta nunca se usa para decidir el cobro.
+
+Probado en vivo contra la DB real (`createJobAndCharge` invocado directamente): créditos>0 + free sin usar + restore → PAID, descuenta, `freeUsed` intacto; créditos=0 + free sin usar + restore → FREE, marca de agua, `freeUsed→true`; créditos=0 + free usada + restore → error; créditos=2 + free sin usar + animate (cuesta 3) → error, NO degrada a free; créditos=3 + free sin usar + animate → PAID, descuenta 3; y la reproducción exacta del incidente (comprar 5 → gastar 3 en video → restaurar con 2 restantes) → ahora da PAID, sin marca de agua, `freeUsed` se mantiene en `false` para cuando sí se necesite.
+
 ### Controles antiabuso del free tier
 
 Una sola restauración gratis por usuario (`freeUsed`), en baja resolución, con marca de agua. El video **nunca** gratis completo — máximo un preview corto con marca de agua.
@@ -392,7 +415,7 @@ Una sola restauración gratis por usuario (`freeUsed`), en baja resolución, con
 6. **Sin emojis en la UI** — solo SVG en `components/icons/`.
 7. **Tono cálido, familiar, en español de México** — no corporativo, no frío, sin jerga de IA.
 8. **Mobile-first** — diseñar para 375px primero. Texto base 17px, botones 52px+, alto contraste: el usuario tiene 60 años y está en un celular.
-9. **Single source of truth**: costos y créditos → `lib/pricing.ts`; ejemplos → `lib/ejemplos.ts`; modelos y prompts de IA → `lib/fal.ts` + env. Nunca hardcodear.
+9. **Single source of truth**: costos y créditos → `lib/pricing.ts`; ejemplos → `lib/ejemplos.ts`; modelos y prompts de IA → `lib/fal.ts` + env. Nunca hardcodear. Por la misma razón, `POST /api/checkout` construye la sesión de Stripe con `price_data` en línea leído de `PACKAGES` — nunca se crean Productos ni Precios en el dashboard de Stripe. Si el precio viviera en dos lugares (código y dashboard), algún día se van a desincronizar: alguien cambia `lib/pricing.ts` para una promoción y se le olvida el dashboard (o al revés), y el usuario paga un monto distinto al que ve en `/#precios`. Con `price_data` en línea eso es estructuralmente imposible.
 10. **La vista previa gratuita se comunica como vista previa** — y la comparación que la justifique debe ser de fotos reales procesadas con ambos modelos, no una diferencia exagerada. Misma regla que los testimonios.
 
 ---
@@ -411,6 +434,33 @@ Se revisó cada ruta de API y cada página que muestra datos de un usuario, veri
 | `/resultado/[jobId]`, `/procesando/[jobId]` | ✅ usan `getJobForUser` |
 | `/mis-fotos` | ✅ `where: { userId: session.user.id }` — **hallazgo real, ya corregido**: el `cursor` de paginación no se validaba contra el dueño. Prisma ubica la fila del cursor por id único *sin* aplicar el `where`, así que un cursor con el id de un job ajeno servía como punto de partida (no exponía datos ajenos, pero sí era un oráculo de existencia/fecha). Se agregó una verificación de propiedad del cursor antes de usarlo. |
 | `POST /api/webhooks/falai` | ✅ autorizado por firma ED25519, no por usuario — correcto para un webhook servidor-a-servidor |
+
+### Entrega de video (rendimiento de `/resultado`)
+
+**El problema real:** el usuario ya esperó 2-3 minutos por la generación y luego volvía a esperar a que el video cargara en `/resultado`. Causa confirmada — no solo sospechada, medida contra la DB y el Blob reales: la implementación original de `GET /api/image/[jobId]` hacía `await blobResponse.arrayBuffer()` y recién entonces construía la respuesta. Eso significa que la función serverless no le manda **ni un byte** al navegador hasta tener el archivo completo en memoria — para un video de ~5MB, ninguna optimización del lado del cliente (`preload`, `poster`, lo que sea) puede compensar eso.
+
+**Arreglado — dos cambios en `app/api/image/[jobId]/route.ts`:**
+1. Reenvía el header `Range` de la petición al `fetch` contra el Blob, y responde `206 Partial Content` con `Content-Range` y `Accept-Ranges: bytes` cuando el Blob devuelve un rango parcial.
+2. La respuesta ya no bufferea (`arrayBuffer()` → `Uint8Array`) — se reenvía `blobResponse.body` (un `ReadableStream`) directo como `BodyInit`, así que el streaming empieza en cuanto llegan los primeros bytes del Blob, con o sin `Range`.
+
+El segundo punto termina siendo el más importante de los dos: incluso una petición completa (sin `Range`) ya no espera a bufferear todo el archivo.
+
+**Medido en vivo** (job real con el video de ejemplo de 4.9MB subido al Blob de este proyecto, servido por el proxy autenticado, validación de dueño intacta):
+
+| Escenario | Antes (buffer completo) | Después |
+|---|---|---|
+| Escritorio, sin límite de ancho de banda — tiempo hasta el primer byte | 6.4s (tiene que bufferear los 4.9MB enteros antes de mandar nada) | 0.30-0.35s |
+| 3G lento simulado (~50KB/s, perfil "Slow 3G" de Chrome DevTools) — tiempo hasta tener disponible el rango que el reproductor necesita | 95.7s (tiempo total: solo entrega el archivo completo, de una sola vez) | 1.3-1.9s (petición `Range` de 8-64KB) |
+
+**Hallazgo adicional, específico de este video de ejemplo:** el `moov` atom (el índice que el navegador necesita antes de poder decodificar cualquier cuadro) está al final del archivo, no al principio — el mp4 no tiene el flag `faststart`. Sin `Range`, el navegador no tiene alternativa a descargar el archivo completo, de principio a fin, antes de poder reproducir nada, sin importar cuánto se optimice el resto. Con `Range`, el navegador (o su demuxer) puede pedir directamente los últimos KB donde vive el `moov` — medido en 1.3s a 50KB/s, contra los 95.7s que tomaba la versión anterior. Esto hace que el punto 1 (Range) sea la mitigación estructural real, más allá de cualquier ajuste de UI.
+
+**Descartado — URL firmada de corta duración (bypasear el proxy):** Vercel Blob sí soporta esto (`issueSignedToken` + `presignUrl`, ambos en `@vercel/blob@2.8.0`), pero requiere que el *store* esté configurado como `private` — un store `public` (el de este proyecto, `store_WcvhxXP51xeYUHmD`) rechaza `access: 'private'` por objeto con `BlobError: Cannot use private access on a public store`. Migrar de store es un paso manual en el dashboard de Vercel, no algo que el código pueda decidir por su cuenta — **queda pendiente**. Si en el futuro se provisiona un store privado para video: `lib/storage.ts` necesitaría un `access` opcional en `put()` y un método `getSignedUrl(pathname, ttlSeconds)` (implementados y probados en esta ronda, luego revertidos junto con la columna `Job.outputPathname` que los acompañaba, precisamente por este bloqueo); el trade-off a documentar en ese momento: la URL firmada es adivinable durante su vigencia (unos minutos), pero la exposición es corta y el contenido son 5 segundos de una foto familiar — no un dato sensible.
+
+**Póster:** `toApiJob` expone `posterUrl` (`/api/image/[jobId]?v=poster`) para jobs `animate` completos, reutilizando `Job.restoredUrl` — la restauración intermedia que ya se guarda antes de animar. No se generó ni se guardó ninguna imagen nueva para esto.
+
+**Reproductor:** `components/ui/VideoPlayer.tsx` — `preload="metadata"`, `playsInline`, `muted`, `loop`, `autoPlay`, `poster`. Spinner + "Cargando tu video…" superpuesto mientras el video no está listo (`onWaiting`/`onCanPlay`/`onPlaying`) o mientras hace buffer — nunca un rectángulo negro sin explicación. Si el elemento `<video>` dispara `onError`, se ofrece un botón de reintentar que solo llama a `videoRef.current.load()` (mismo `src`, la URL del proxy no expira).
+
+**Compresión al guardar (evaluado, no implementado):** con `ffmpeg` local (`libx264`, `-crf 28 -preset veryfast -movflags +faststart`, sin audio — el video ya se genera sin audio) el mismo video de ejemplo bajó de 4.9MB a ~400KB (~92% menos), en 1.2s de proceso en una laptop M-series. La calidad visual a ese CRF es aceptable para un preview de 5 segundos, pero no se validó formalmente contra el mismo set de 5 fotos que se usó para elegir los modelos de IA. **No se agregó como dependencia** porque el pedido explícito era reportar el costo antes de instalarla: hace falta un binario de `ffmpeg` empaquetado para el runtime serverless de Vercel (paquetes como `ffmpeg-static` o `@ffmpeg-installer/ffmpeg`, o `fluent-ffmpeg` como wrapper) — eso agrega binarios nativos por plataforma al bundle de la función (decenas de MB) y varios segundos de latencia por video dentro de `handleFinalSuccess` en el webhook (que ya descarga + a veces aplica marca de agua, con `maxDuration = 60`). El beneficio es real y grande (92% menos peso → carga aún más rápida, y de regalo `+movflags faststart` resuelve el hallazgo del `moov` al final sin depender de `Range`), pero es una decisión de infraestructura que requiere aprobación explícita antes de sumar la dependencia — pendiente.
 
 No se encontró ningún IDOR real (acceso a datos ajenos). El único hallazgo fue el oráculo de cursor en `/mis-fotos`, de severidad baja, ya corregido.
 
@@ -464,7 +514,7 @@ Confirmado en el código de `@auth/core`: el default de Auth.js para el provider
 
 ### Cabeceras de seguridad y CSP
 
-`next.config.ts` → `headers()`. Incluye `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` y una CSP con `frame-ancestors 'none'`, `object-src 'none'`, `img-src`/`connect-src` permitiendo `facebook.net`/`facebook.com` (Pixel de Meta) además de `'self'`.
+`next.config.ts` → `headers()`. Incluye `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` y una CSP con `frame-ancestors 'none'`, `object-src 'none'`, `img-src`/`connect-src` permitiendo `facebook.net`/`facebook.com` (Pixel de Meta) además de `'self'`. `img-src` también incluye `blob:` — sin eso, la vista previa local de `PhotoUploader.tsx` (`URL.createObjectURL()`, antes de subir la foto a ningún lado) nunca pinta; el navegador no lo reporta como error visible, solo se ve en que `naturalWidth` del `<img>` se queda en 0. Bug real detectado y corregido en producción de esta ronda — si se toca `img-src` en el futuro, probar `/crear` subiendo una foto de verdad, no solo build/lint.
 
 **Decisión explícita: CSP sin nonces**, con `'unsafe-inline'` en `script-src` y `style-src`. Next.js recomienda CSP con nonce para bloquear inline scripts por completo, pero eso **exige que toda página se renderice de forma dinámica** (desactiva la generación estática) — un costo real para la landing, que es justo la página que más importa que cargue rápido viniendo de anuncios de Meta. Además, `style={{...}}` se usa en casi todo el sistema de diseño de este proyecto en vez de clases, lo que de todos modos requeriría `'unsafe-inline'` en `style-src` aunque se adoptara nonce para scripts. Si en el futuro se necesita CSP estricta (por ejemplo, por una auditoría de seguridad externa), la migración a nonces está documentada en los docs de Next.js de este mismo repo (`node_modules/next/dist/docs/.../content-security-policy.md`).
 
@@ -495,12 +545,14 @@ AUTH_RESEND_KEY=             # Resend — ver instrucciones abajo
 EMAIL_FROM="Revívelos <noreply@tudominio.mx>"
 
 STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=  # sin usar hoy — el checkout es 100% hospedado por Stripe (redirect a session.url), no hay Stripe.js en el cliente. Se deja por si algún día se necesita Elements embebido
+STRIPE_WEBHOOK_SECRET=      # de `stripe listen --forward-to localhost:3000/api/webhooks/stripe` en dev; el de producción se genera al crear el endpoint en el dashboard de Stripe
 MERCADOPAGO_ACCESS_TOKEN=
 
 CRON_SECRET=               # protege /api/cron/cleanup — Vercel Cron manda `Authorization: Bearer $CRON_SECRET` automáticamente cuando la env var existe en el proyecto
 NEXT_PUBLIC_FB_PIXEL_ID=
-NEXT_PUBLIC_BASE_URL=       # usada para construir el webhookUrl que se le pasa a fal.queue.submit
+META_CAPI_TOKEN=            # token de acceso de la app de Meta Conversions API — sin esto, el webhook de Stripe sigue acreditando créditos normal, solo se omite (log + return) el evento Purchase server-side
+NEXT_PUBLIC_BASE_URL=       # usada para construir el webhookUrl que se le pasa a fal.queue.submit, y success_url/cancel_url/event_source_url de Stripe/Meta CAPI
 
 FREE_TIER_DAILY_CAP=200     # tope de previews gratis por día calendario UTC; default 200 si se omite. Ver sección "Seguridad"
 FREE_TIER_ENABLED=true      # kill switch de emergencia — cualquier valor distinto a 'false' cuenta como activado
@@ -533,7 +585,7 @@ Ya configurado para dev — credenciales reales en `.env`. Lo que falta es agreg
 
 ## Despliegue a producción
 
-Preparación de código hecha en esta ronda — build y lint limpios, `npm run build` corre `prisma generate && prisma migrate deploy && next build` (antes solo `generate`, así que las migraciones ya no dependen de correrlas a mano). **Pagos (Stripe/Mercado Pago) quedan fuera a propósito** — `POST /api/credits` sigue devolviendo 503, es lo único pendiente antes de poder cobrar.
+Preparación de código hecha en esta ronda — build y lint limpios, `npm run build` corre `prisma generate && prisma migrate deploy && next build` (antes solo `generate`, así que las migraciones ya no dependen de correrlas a mano). **Stripe (tarjetas) ya está integrado y funcionando** en dev contra el sandbox — ver la tabla de estado. **Mercado Pago (OXXO/SPEI) queda fuera a propósito**, para una siguiente iteración.
 
 ### Variables de entorno — qué cambia en producción vs. dev
 
@@ -550,7 +602,10 @@ Preparación de código hecha en esta ronda — build y lint limpios, `npm run b
 | `AUTH_RESEND_KEY` / `EMAIL_FROM` | reales, funcionando | las mismas | Confirmar que el dominio de `EMAIL_FROM` esté verificado en Resend antes del primer envío real |
 | `FREE_TIER_DAILY_CAP` | `200` | recomendado: **empezar más bajo** (ver abajo) | El valor de hoy es el default conservador de la sección "Seguridad" — vale la pena bajarlo los primeros días de campaña real |
 | `FREE_TIER_ENABLED` | `true` | `true` | Sin cambios — es el kill switch de emergencia, no un valor de configuración por entorno |
-| `STRIPE_*` / `MERCADOPAGO_*` | sin usar | **no configurar todavía** | Pagos quedan fuera de este despliegue — dejarlas sin definir es correcto, `POST /api/credits` ya maneja ese caso con un 503 explícito |
+| `STRIPE_SECRET_KEY` | key de sandbox | **key de producción (`sk_live_...`)** | La de dev solo procesa tarjetas de prueba — cobrar de verdad exige la key live de la cuenta de Stripe real |
+| `STRIPE_WEBHOOK_SECRET` | el que imprime `stripe listen` en dev | **el del endpoint configurado en el dashboard de Stripe** apuntando a `https://www.revivelos.com/api/webhooks/stripe` | Cada endpoint (dev vs. producción) tiene su propio secreto de firma — no son intercambiables |
+| `MERCADOPAGO_*` | sin usar | **no configurar todavía** | Mercado Pago queda fuera de este despliegue a propósito |
+| `META_CAPI_TOKEN` | sin definir | opcional, igual que `NEXT_PUBLIC_FB_PIXEL_ID` | Sin ella el webhook de Stripe sigue acreditando créditos normal, solo se omite el evento `Purchase` server-side (log + return, ver `lib/meta-capi.ts`) |
 | `NEXT_PUBLIC_FB_PIXEL_ID` | sin definir | opcional | `MetaPixel.tsx` no renderiza nada si falta — definirla solo cuando se quiera que el Pixel esté activo desde el día 1 |
 
 **Free tier el día del lanzamiento:** el tope hoy vive en `200`/día (el default conservador documentado en "Seguridad", pensado para el peor caso — 200 × $3.33 MXN con Nano Banana Pro si todo se sirviera con el modelo caro, aunque el free tier usa el barato). Con tráfico real de Meta ads y sin datos históricos de conversión todavía, recomiendo arrancar más bajo — **50 o 100** — los primeros 3-5 días, y subirlo una vez que se vea el costo real por foto subida (la métrica que ya está marcada como "a vigilar" en la sección de economía del producto). Subir el número no requiere deploy, solo cambiar la env var en Vercel.
@@ -565,8 +620,8 @@ Preparación de código hecha en esta ronda — build y lint limpios, `npm run b
 6. **Vercel Cron**: se activa solo con `vercel.json` + `CRON_SECRET` seteado — nada manual aquí, pero vale la pena revisar en el dashboard de Vercel que el cron aparezca programado después del primer deploy.
 7. **Primer deploy**: confirmar en los logs de build que `prisma migrate deploy` corrió sin errores antes de `next build`.
 8. **Después del primer deploy**: probar el flujo completo (`/crear` → restauración gratis → `/resultado`) contra `https://www.revivelos.com` real, no contra ngrok. Confirmar que el login con Google funciona con la redirect URI nueva.
-9. **Decidir cuándo activar `NEXT_PUBLIC_FB_PIXEL_ID`** — puede quedar sin definir hasta que se lance la primera campaña de Meta ads.
-10. **Pagos** (Stripe/Mercado Pago) quedan para después — no bloquean este despliegue.
+9. **Decidir cuándo activar `NEXT_PUBLIC_FB_PIXEL_ID`** (y `META_CAPI_TOKEN`) — puede quedar sin definir hasta que se lance la primera campaña de Meta ads.
+10. **Stripe en producción**: cambiar a la key live, crear el endpoint de webhook en el dashboard de Stripe apuntando a `https://www.revivelos.com/api/webhooks/stripe` con el evento `checkout.session.completed`, y cargar el `STRIPE_WEBHOOK_SECRET` que genera ese endpoint (no el de `stripe listen`). Probar una compra real de punta a punta antes de anunciar precios. Mercado Pago queda para después — no bloquea este despliegue.
 
 ---
 

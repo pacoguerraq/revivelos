@@ -9,6 +9,9 @@ export interface Job {
   stage: JobStage
   inputUrl: string
   outputUrl: string | null
+  // Solo se llena para jobs 'animate' completos — reutiliza la restauración
+  // intermedia como cuadro representativo del video antes de que cargue.
+  posterUrl: string | null
   watermarked: boolean
   error: string | null
   createdAt: string

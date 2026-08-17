@@ -5,6 +5,7 @@ import { getUserId } from '@/lib/cookies'
 import { BeforeAfterSlider } from '@/components/ui/BeforeAfterSlider'
 import { ShareButton } from '@/components/ui/ShareButton'
 import { DownloadButton } from '@/components/ui/DownloadButton'
+import { VideoPlayer } from '@/components/ui/VideoPlayer'
 
 const description = 'El resultado de tu restauración o animación con Revívelos.'
 
@@ -60,22 +61,16 @@ export default async function ResultadoPage({ params }: Props) {
           </p>
         </div>
 
-        {/* Resultado: video animado o slider antes/después */}
+        {/* Resultado: video animado o slider antes/después. Ninguno de los
+            dos fuerza un recorte a 4/3 — es la foto o el video real del
+            usuario, con la proporción que haya subido, no una foto de
+            stock curada como en el Hero/Ejemplos. */}
         <div
-          className="rounded-xl overflow-hidden mb-6"
-          style={{ boxShadow: 'var(--shadow-warm-lg)', border: '1px solid var(--color-sepia-100)' }}
+          className="rounded-xl overflow-hidden mb-6 flex justify-center"
+          style={{ boxShadow: 'var(--shadow-warm-lg)', border: '1px solid var(--color-sepia-100)', background: '#000' }}
         >
-          {isVideo ? (
-            <video
-              src={job.outputUrl ?? undefined}
-              autoPlay
-              loop
-              muted
-              playsInline
-              controls
-              className="w-full h-full"
-              style={{ aspectRatio: '4/3', objectFit: 'cover', background: '#000' }}
-            />
+          {isVideo && job.outputUrl ? (
+            <VideoPlayer src={job.outputUrl} posterUrl={job.posterUrl} />
           ) : (
             <BeforeAfterSlider
               beforeSrc={job.inputUrl}
@@ -87,6 +82,8 @@ export default async function ResultadoPage({ params }: Props) {
               beforeFilter="grayscale(85%) contrast(0.9)"
               afterFilter="sepia(20%) saturate(1.3) brightness(1.05) contrast(1.05)"
               aspectRatio="4/3"
+              objectFit="contain"
+              className="w-full"
               unoptimized
             />
           )}

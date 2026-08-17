@@ -1,11 +1,36 @@
+'use client'
+
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { type Package, calcEquivalencias } from '@/lib/pricing'
+import { startCheckout } from '@/lib/checkout-client'
 
 export function PackageCard({ pkg }: { pkg: Package }) {
+  const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const { restores, videos } = calcEquivalencias(pkg.credits)
 
   // Pluralización correcta: sin concatenar sufijos sobre palabras con tilde
   const restoresLabel = restores === 1 ? '1 restauración' : `${restores} restauraciones`
   const videosLabel = videos === 1 ? '1 video' : `${videos} videos`
+
+  async function handleClick() {
+    setError(null)
+    setLoading(true)
+    const outcome = await startCheckout(pkg.id)
+    if (outcome.needsAuth) {
+      router.push(`/entrar?callbackUrl=${encodeURIComponent(`/comprar/${pkg.id}`)}`)
+      return
+    }
+    if (!outcome.ok) {
+      setError(outcome.error ?? 'No se pudo iniciar el pago. Intenta de nuevo.')
+      setLoading(false)
+      return
+    }
+    // outcome.ok === true ya navegó a Stripe — se deja loading=true mientras
+    // el navegador termina de salir de la página.
+  }
 
   return (
     <div
@@ -54,12 +79,20 @@ export function PackageCard({ pkg }: { pkg: Package }) {
         {restoresLabel} o {videosLabel} animados
       </p>
 
-      {/* TODO: integrar Stripe — conectar este botón con el checkout */}
+      {error && (
+        <p className="text-xs mb-3" style={{ color: 'var(--color-error)' }}>
+          {error}
+        </p>
+      )}
+
       <button
         type="button"
+        onClick={handleClick}
+        disabled={loading}
         className={pkg.popular ? 'btn btn-primary w-full' : 'btn btn-secondary w-full'}
+        style={{ opacity: loading ? 0.7 : 1 }}
       >
-        Comprar {pkg.credits} créditos
+        {loading ? 'Preparando…' : `Comprar ${pkg.credits} créditos`}
       </button>
     </div>
   )

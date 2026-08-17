@@ -12,11 +12,15 @@ const isDev = process.env.NODE_ENV === "development";
 // hay contenido de usuario que se renderice como HTML en ningún lado).
 // style-src necesita 'unsafe-inline' de todos modos porque el sistema de
 // diseño usa `style={{...}}` en vez de clases para casi todo.
+// img-src incluye blob: porque PhotoUploader.tsx muestra la vista previa
+// local con URL.createObjectURL() antes de subir la foto a ningún lado —
+// sin blob: esa <img> nunca pinta. El navegador no lo reporta como un
+// error visible en consola; solo se ve en que naturalWidth se queda en 0.
 const cspHeader = `
   default-src 'self';
   script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://connect.facebook.net;
   style-src 'self' 'unsafe-inline';
-  img-src 'self' data: https://www.facebook.com;
+  img-src 'self' data: blob: https://www.facebook.com;
   font-src 'self' data:;
   connect-src 'self' https://www.facebook.com;
   object-src 'none';

@@ -7,6 +7,7 @@ import { CameraIcon } from '@/components/icons/CameraIcon'
 import { PaletteIcon } from '@/components/icons/PaletteIcon'
 import { FilmIcon } from '@/components/icons/FilmIcon'
 import { getDeviceFingerprint } from '@/lib/fingerprint'
+import { RESTORE_COST, ANIMATE_COST } from '@/lib/pricing'
 
 type ActionType = 'restore' | 'animate'
 
@@ -34,7 +35,12 @@ function truncateName(name: string, max = 36): string {
   return name.slice(0, max - ext.length - 1) + '…' + ext
 }
 
-export function PhotoUploader() {
+// `hasCredits` solo decide qué etiqueta mostrar en el selector — nunca qué
+// se cobra. La decisión real de tier (PAID vs. FREE) vive exclusivamente
+// en `createJobAndCharge` (lib/jobs.ts); esto es puramente para no
+// prometerle "gratis" a alguien que ya tiene saldo y en realidad va a
+// pagar con crédito (ver AGENTS.md, "Prioridad tier PAID vs. FREE").
+export function PhotoUploader({ hasCredits = false }: { hasCredits?: boolean }) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -114,9 +120,20 @@ export function PhotoUploader() {
   if (preview && file) {
     return (
       <div className="w-full max-w-lg mx-auto">
-        {/* Preview */}
-        <div className="relative rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}>
-          <img src={preview} alt="Vista previa de tu foto" className="w-full h-full object-cover" />
+        {/* Preview — sin aspect-ratio fijo ni object-cover: una <img> plana
+            sin `fill` se dimensiona sola según su relación de aspecto real
+            (igual que un <video>), así que con solo limitar el alto máximo
+            se ve la foto completa, nunca recortada. */}
+        <div
+          className="relative rounded-lg overflow-hidden flex justify-center"
+          style={{ background: 'var(--color-sepia-100)' }}
+        >
+          <img
+            src={preview}
+            alt="Vista previa de tu foto"
+            className="max-w-full"
+            style={{ maxHeight: '60vh', height: 'auto', width: 'auto' }}
+          />
           <button
             onClick={handleReset}
             className="absolute top-3 right-3 bg-white rounded-full w-9 h-9 flex items-center justify-center text-xl leading-none"
@@ -147,7 +164,7 @@ export function PhotoUploader() {
               icon={<PaletteIcon size={22} />}
               title="Restaurar y colorear"
               description="Elimina daños, arañazos y agrega color natural"
-              badge="Gratis la primera vez"
+              badge={hasCredits ? `${RESTORE_COST} crédito${RESTORE_COST !== 1 ? 's' : ''}` : 'Gratis la primera vez'}
             />
             <ActionCard
               selected={action === 'animate'}
@@ -156,7 +173,7 @@ export function PhotoUploader() {
               title="Animar en video"
               description="Crea un video corto donde la persona se mueve suavemente"
               note="Funciona mejor con fotos de una o dos personas y rostros grandes."
-              badge="3 créditos"
+              badge={`${ANIMATE_COST} créditos`}
             />
           </div>
         </div>

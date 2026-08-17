@@ -34,6 +34,7 @@ export function toApiJob(job: PrismaJob): Job {
     stage: job.stage.toLowerCase() as JobStage,
     inputUrl: `/api/image/${job.id}?v=input`,
     outputUrl: job.outputUrl ? `/api/image/${job.id}?v=output` : null,
+    posterUrl: job.type === 'ANIMATE' && job.restoredUrl ? `/api/image/${job.id}?v=poster` : null,
     watermarked: job.watermarked,
     error: job.error,
     createdAt: job.createdAt.toISOString(),
@@ -64,7 +65,15 @@ export async function createJobAndCharge(params: {
 
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.findUniqueOrThrow({ where: { id: userId } })
-    let isFreeRestore = type === 'restore' && !user.freeUsed
+
+    // Regla de prioridad (ver AGENTS.md, "Prioridad tier PAID vs. FREE"):
+    // quien tiene crédito suficiente SIEMPRE paga con crédito y recibe
+    // PAID, sin importar si su restauración gratis sigue disponible. El
+    // free tier es el último recurso, no el primero — nunca puede cubrir
+    // un video (ANIMATE_COST siempre > 0 créditos disponibles cuando el
+    // saldo no alcanza) y nunca se ofrece si ya hay crédito de sobra.
+    const hasEnoughCredits = user.credits >= cost
+    let isFreeRestore = !hasEnoughCredits && type === 'restore' && !user.freeUsed
     let claimedFingerprint: string | null = null
 
     // Tope global de gasto diario del free tier. Se evalúa solo cuando esta
