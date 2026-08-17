@@ -82,3 +82,31 @@ export async function addCreditsFromPurchase(params: {
     throw error
   }
 }
+
+// Único punto que permite a un humano (el admin) tocar User.credits fuera
+// del flujo normal de compra/consumo/reembolso. Igual que el resto de
+// lib/credits.ts, nunca es un `update` suelto: el `updateMany` condicional
+// (`credits >= -delta`, válido para delta positivo o negativo) impide dejar
+// el saldo negativo dentro de la misma transacción que crea el
+// CreditTransaction — nunca queda un ajuste sin rastro en el historial.
+export async function adjustCreditsByAdmin(params: {
+  userId: string
+  delta: number
+  note: string
+}): Promise<void> {
+  const { userId, delta, note } = params
+  if (!Number.isInteger(delta) || delta === 0) throw new Error('El ajuste debe ser un entero distinto de cero')
+  if (!note.trim()) throw new Error('El motivo es obligatorio')
+
+  await prisma.$transaction(async (tx) => {
+    const result = await tx.user.updateMany({
+      where: { id: userId, credits: { gte: -delta } },
+      data: { credits: { increment: delta } },
+    })
+    if (result.count === 0) throw new InsufficientCreditsError()
+
+    await tx.creditTransaction.create({
+      data: { userId, delta, reason: 'ADMIN_ADJUSTMENT', note: note.trim() },
+    })
+  })
+}

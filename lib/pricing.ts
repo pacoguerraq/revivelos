@@ -37,3 +37,13 @@ export function calcEquivalencias(credits: number) {
     videos: Math.floor(credits / ANIMATE_COST),
   }
 }
+
+// Costo real de API por operación en MXN, ya con el factor 1.3x de
+// reintentos/regeneraciones/fallos aplicado — ver tabla "Costo por
+// operación" en AGENTS.md. Usado por el dashboard de admin para estimar el
+// gasto del día contra el ingreso. No cambiar sin actualizar esa tabla.
+export const API_COST_MXN = {
+  restorePaid: 3.33,
+  restoreFree: 0.87,
+  animate: 11.1,
+} as const

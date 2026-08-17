@@ -520,6 +520,33 @@ Confirmado en el código de `@auth/core`: el default de Auth.js para el provider
 
 ---
 
+## Panel de administración
+
+`/admin` — dashboard interno de una sola persona (el dueño del negocio), pensado sobre todo para vigilar las primeras campañas de Meta ads sin entrar a la DB a mano. Solo lectura salvo el ajuste manual de créditos.
+
+**Auth propia, deliberadamente separada de Auth.js** (`lib/admin-auth.ts`): contraseña única en `ADMIN_PASSWORD`, comparada con hash SHA-256 + `timingSafeEqual` (no `===`, y no se comparan los buffers de la contraseña directamente para no filtrar su longitud por el `throw` de `timingSafeEqual` ante tamaños distintos). Al validar, se emite una cookie httpOnly `admin_session` firmada con HMAC-SHA256 derivado de `ADMIN_PASSWORD` (no hace falta un secreto nuevo, y rotar la contraseña invalida todas las sesiones firmadas con la anterior), expira a las 8 horas. Nunca se usa Auth.js aquí a propósito: es una herramienta de una sola persona y mezclarla con el sistema de cuentas de los usuarios habría acoplado dos cosas sin relación.
+
+**Si `ADMIN_PASSWORD` no está definida, `/admin` completo no existe** — 404, no un formulario de login que anuncie la herramienta. Mismo trato para cualquier request sin cookie válida bajo `/admin/*` o `/api/admin/*`: 404, nunca 401.
+
+**El chequeo de acceso vive en tres capas, no una sola, y las tres son necesarias:**
+1. `proxy.ts` (`guardAdmin`) — la que de verdad determina el status code HTTP. Este proyecto tiene un `app/loading.tsx` raíz, lo que hace que **toda** ruta streamee un shell con `200` antes de que un `notFound()` más adentro del árbol de React pueda resolverse — confirmado probando `/resultado/<id-inexistente>`, que ya tenía este mismo comportamiento antes de que existiera el panel de admin. Un 404 real solo se puede garantizar deteniendo la petición antes de que empiece el streaming, así que `proxy.ts` valida la cookie con Web Crypto (`crypto.subtle`, no `node:crypto` — el runtime de Proxy/Middleware puede ser Edge) y devuelve `404` directo si falta o es inválida, sin tocar React.
+2. `app/admin/layout.tsx` (gate de `ADMIN_PASSWORD`) y `app/admin/(protected)/layout.tsx` (gate de sesión) — capa de defensa adicional a nivel de React, en caso de que algo bypasee el proxy.
+3. **Cada página protegida repite el mismo chequeo como su primera línea**, antes de cualquier `await` a la DB (`dashboard/page.tsx`, `usuarios/page.tsx`, `usuarios/[userId]/page.tsx`). Esto no es redundancia decorativa: **hallazgo real de esta ronda** — Next.js puede empezar a renderizar una página y su layout en paralelo (fetching de datos paralelo entre segmentos), así que un `notFound()` solo en el layout no impedía que las queries de la página corrieran igual; su resultado (compras, ingresos, correos de usuarios) terminaba serializado en el payload RSC de la respuesta HTTP a una petición sin cookie, aunque la UI visible mostrara el 404. Confirmado con curl inspeccionando los bytes crudos de la respuesta antes y después del fix. El chequeo temprano en cada página es lo que de verdad cierra esa fuga.
+
+Cada ruta de API bajo `/api/admin/*` llama a `requireAdmin()` (`lib/admin-auth.ts`) como primera línea del handler — ahí no hay problema de streaming porque un Route Handler no pasa por React, así que un `return` con status 404 antes de cualquier query ya es correcto por sí solo.
+
+**Login** es un Server Action normal en `app/admin/page.tsx` (mismo patrón que `/entrar`), con rate limiting reutilizando `lib/rate-limit.ts` (**5 intentos por IP / 15 min**). No hay `POST /api/admin/login` — no hacía falta una ruta de API separada para esto.
+
+**Métricas** (`lib/admin-metrics.ts`) — todo calculado con queries a `Job`/`User`/`CreditTransaction`, sin tablas nuevas. El costo de API estimado usa las constantes de `API_COST_MXN` en `lib/pricing.ts` (mismos números que la tabla "Costo por operación" de este archivo — actualizar ambos lados si cambian). El ingreso y el paquete de cada compra se infieren emparejando `CreditTransaction.delta` contra `PACKAGES` en `lib/pricing.ts` (los créditos por paquete son únicos, así que el match es exacto) — no se duplica el precio en ningún lado nuevo. La serie de 30 días usa dos queries agregadas con `date_trunc` en SQL crudo (`prisma.$queryRaw`) en vez de 30 iteraciones, porque el cliente tipado de Prisma no expresa group-by-por-día.
+
+**Ajuste manual de créditos** (`lib/credits.ts` → `adjustCreditsByAdmin`): agregó el reason `ADMIN_ADJUSTMENT` al enum `CreditReason` y una columna `CreditTransaction.note` (texto libre, obligatorio solo para este reason) — es la única mutación de todo el panel, y como el resto de `lib/credits.ts`, nunca es un `update` suelto: un `updateMany` condicional (`credits >= -delta`, válido tanto para sumar como para restar) dentro de la misma transacción que crea el `CreditTransaction` impide dejar el saldo negativo y garantiza que todo ajuste deja rastro. El formulario (`AdjustCreditsForm.tsx`, client component) pide confirmación explícita (`window.confirm` con el motivo visible) antes de enviar.
+
+**Privacidad, incluso del lado del admin:** las páginas de usuario y las queries de jobs nunca seleccionan `inputUrl`/`outputUrl`/`restoredUrl` — se puede ver que un job existe, su tipo, tier, estado y error, no el contenido de la foto.
+
+`app/robots.ts` ya excluye `/admin` (host de producción); no se agregó a `sitemap.ts` porque nunca estuvo ahí (allowlist explícita).
+
+---
+
 ## Variables de entorno
 
 ```
@@ -556,6 +583,8 @@ NEXT_PUBLIC_BASE_URL=       # usada para construir el webhookUrl que se le pasa 
 
 FREE_TIER_DAILY_CAP=200     # tope de previews gratis por día calendario UTC; default 200 si se omite. Ver sección "Seguridad"
 FREE_TIER_ENABLED=true      # kill switch de emergencia — cualquier valor distinto a 'false' cuenta como activado
+
+ADMIN_PASSWORD=             # contraseña de /admin — auth propia, no Auth.js (ver sección "Panel de administración"). Sin esto, /admin y /api/admin/* no existen (404). Generar un valor distinto para producción, nunca reusar el de dev.
 ```
 
 Hoy vive en `.env` (no `.env.local`) en este entorno de desarrollo, con credenciales reales para todo (Neon, Vercel Blob, fal, Google OAuth, Resend) — nada es un placeholder que impida arrancar. Lo que sí es de dev-solamente, y **no debe copiarse tal cual a producción**, son los cuatro valores listados en la tabla de la sección "Despliegue a producción" más abajo (`NEXT_PUBLIC_BASE_URL`, `AUTH_URL`, `AUTH_SECRET`, `CRON_SECRET`) — los tres primeros porque apuntan al túnel de ngrok o son secretos de un solo entorno, `CRON_SECRET` porque el de este `.env` se generó únicamente para probar el cron en local.

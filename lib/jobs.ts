@@ -13,13 +13,14 @@ export const RETENTION_DAYS = 30
 
 // Kill switch de emergencia: apaga el free tier sin necesidad de deploy.
 // Cualquier valor distinto a la cadena 'false' se toma como "activado".
-const FREE_TIER_ENABLED = process.env.FREE_TIER_ENABLED !== 'false'
+// Exportado para que el dashboard de admin muestre el interruptor actual.
+export const FREE_TIER_ENABLED = process.env.FREE_TIER_ENABLED !== 'false'
 
 // Tope conservador por defecto (200 previews/día ≈ $174 MXN de gasto en
 // fal con Nano Banana normal en el peor caso). Ajustable sin deploy vía env.
-const FREE_TIER_DAILY_CAP = Number(process.env.FREE_TIER_DAILY_CAP) || 200
+export const FREE_TIER_DAILY_CAP = Number(process.env.FREE_TIER_DAILY_CAP) || 200
 
-function startOfTodayUTC(): Date {
+export function startOfTodayUTC(): Date {
   const now = new Date()
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 }

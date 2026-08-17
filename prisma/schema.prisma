@@ -41,6 +41,7 @@ enum CreditReason {
   FREE_PREVIEW
   PURCHASE
   REFUND
+  ADMIN_ADJUSTMENT
 }
 
 model User {
@@ -166,6 +167,10 @@ model CreditTransaction {
   // findFirst previo que sería vulnerable a una carrera entre dos entregas
   // casi simultáneas. Mismo patrón que Job.falRequestId.
   externalId String?     @unique
+  // Motivo en texto libre — solo se llena para ADMIN_ADJUSTMENT, donde el
+  // motivo es obligatorio (ver lib/credits.ts adjustCreditsByAdmin). Para el
+  // resto de los reasons el enum ya es autoexplicativo.
+  note      String?
   createdAt DateTime     @default(now())
 
   @@index([userId])
