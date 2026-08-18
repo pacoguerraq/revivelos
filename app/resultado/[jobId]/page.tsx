@@ -114,13 +114,20 @@ export default async function ResultadoPage({ params }: Props) {
             <DownloadButton
               href={job.outputUrl}
               filename={`revivelos-${jobId}.${isVideo ? 'mp4' : 'jpg'}`}
-              label={isVideo ? 'Descargar video' : 'Descargar foto'}
+              mimeType={isVideo ? 'video/mp4' : 'image/jpeg'}
+              kind={isVideo ? 'video' : 'foto'}
             />
           )}
           <Link href="/crear" className="btn btn-secondary">
             Restaurar otra foto
           </Link>
-          <ShareButton />
+          {job.outputUrl && (
+            <ShareButton
+              href={job.outputUrl}
+              filename={`revivelos-${jobId}.${isVideo ? 'mp4' : 'jpg'}`}
+              mimeType={isVideo ? 'video/mp4' : 'image/jpeg'}
+            />
+          )}
         </div>
 
         {/* Prueba social / nudge */}

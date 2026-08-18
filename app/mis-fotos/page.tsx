@@ -173,7 +173,8 @@ function GalleryCard({ job, createdAt, eager }: { job: Job; createdAt: Date; eag
           <DownloadButton
             href={job.outputUrl}
             filename={`revivelos-${job.id}.${isVideo ? 'mp4' : 'jpg'}`}
-            label="Descargar"
+            mimeType={isVideo ? 'video/mp4' : 'image/jpeg'}
+            kind={isVideo ? 'video' : 'foto'}
           />
         )}
       </div>

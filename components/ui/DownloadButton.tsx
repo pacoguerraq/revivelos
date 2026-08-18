@@ -1,17 +1,33 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+
+function isMobileDevice(): boolean {
+  const uaData = (navigator as Navigator & { userAgentData?: { mobile: boolean } }).userAgentData
+  if (uaData) return uaData.mobile
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
 
 export function DownloadButton({
   href,
   filename,
-  label,
+  mimeType,
+  kind,
 }: {
   href: string
   filename: string
-  label: string
+  mimeType: string
+  kind: 'foto' | 'video'
 }) {
   const [isDownloading, setIsDownloading] = useState(false)
+  // 'Descargar' es el default seguro para SSR (sin navigator); se corrige a
+  // 'Guardar' tras montar si el dispositivo es móvil, para no desincronizar
+  // el HTML del servidor con el del cliente en la hidratación.
+  const [actionWord, setActionWord] = useState<'Descargar' | 'Guardar'>('Descargar')
+
+  useEffect(() => {
+    if (isMobileDevice()) setActionWord('Guardar')
+  }, [])
 
   const handleClick = async () => {
     setIsDownloading(true)
@@ -19,6 +35,20 @@ export function DownloadButton({
       const res = await fetch(href)
       if (!res.ok) throw new Error('No se pudo descargar')
       const blob = await res.blob()
+
+      // En celular, un <a download> típicamente cae en la carpeta de
+      // Descargas/Archivos, no en el carrete de fotos. La forma real de
+      // llegar a la galería es el cuadro nativo para compartir/guardar
+      // (en iOS y Android trae la opción "Guardar imagen/video"), así que
+      // ahí se usa en vez de la descarga silenciosa.
+      if (isMobileDevice()) {
+        const file = new File([blob], filename, { type: mimeType })
+        if (navigator.canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file] })
+          return
+        }
+      }
+
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
@@ -27,7 +57,8 @@ export function DownloadButton({
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
       // Si falla el fetch (red, CORS, etc.), se cae al comportamiento nativo
       // del navegador abriendo la URL directamente.
       window.location.href = href
@@ -35,6 +66,8 @@ export function DownloadButton({
       setIsDownloading(false)
     }
   }
+
+  const label = isDownloading ? 'Preparando…' : `${actionWord} ${kind}`
 
   return (
     <button
@@ -45,7 +78,7 @@ export function DownloadButton({
     >
       {isDownloading ? (
         <>
-          <SpinnerIcon /> Descargando…
+          <SpinnerIcon /> {label}
         </>
       ) : (
         <>⬇ {label}</>
