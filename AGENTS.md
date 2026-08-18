@@ -120,7 +120,6 @@ lib/
   auth.ts                         # config de Auth.js v5: Google + Resend, fusión de identidad, enriquecimiento de perfil
   auth-merge.ts                   # mergeAnonymousUser — un solo algoritmo para los 3 casos de fusión anónimo→cuenta
   email.ts                        # magic link con marca propia vía Resend (no la plantilla default de Auth.js)
-  og-image.tsx                    # composición compartida antes/después para opengraph-image.tsx y twitter-image.tsx
   rate-limit.ts                   # checkRateLimit(s), enforceGeneralRateLimit — ventana fija en Postgres, sin Redis
   file-validation.ts              # validateImageFile — detección de tipo real por magic bytes, nunca por Content-Type/extensión
 app/
@@ -135,7 +134,7 @@ app/
   # reusan components/ui/LoadingSpinner.tsx.
   robots.ts / sitemap.ts / manifest.ts   # convenciones de App Router — excluyen /mis-fotos, /resultado/*, /procesando/*, /api/*
   llms.txt/route.ts               # descripción del sitio para agentes de IA, texto plano
-  opengraph-image.tsx / twitter-image.tsx # generan la imagen para compartir (next/og) — ver nota de lib/og-image.tsx
+  opengraph-image.png             # imagen estática de compartir (convención de archivo de Next.js, sin código) — Next genera og:image automáticamente a partir de este archivo; no hay twitter-image propio, así que Twitter/X cae de vuelta a este mismo og:image
   icon.png / apple-icon.png       # favicon y apple-touch-icon (convención de archivo, sin código)
   privacidad/ terminos/ reembolsos/page.tsx # legales — BORRADOR sin revisión de abogado, ver comentario al inicio de cada archivo
   restaurar-fotos-antiguas/ animar-fotos-en-video/page.tsx # landings SEO por servicio, cada una con su H1/FAQ/canonical propios
@@ -220,7 +219,7 @@ components/
 | Rendimiento del landing (CLS) | **Funcionando** — CLS 0.462→0 (causa raíz: `Header` async sin `Suspense` propio colisionando con `app/loading.tsx` en la raíz, ver sección "Rendimiento del landing"). Medido con Lighthouse local antes/después; **falta remedir con PageSpeed Insights contra `https://revivelos.com` real tras desplegar** — los números locales no son comparables 1:1 con los de producción por la diferencia de red |
 | Imágenes de /public/ejemplos/ | **Agregadas** — `hero-antes/despues.jpg`, `1/2/3-antes/despues.jpg`, `video-animated.mp4` y sus miniaturas ya existen en el repo |
 | Páginas legales (privacidad/términos/reembolsos) | **Funcionando como borrador** — contenido real conforme a LFPDPPP y Profeco, pero marcado explícitamente como no revisado por abogado (comentario al inicio de cada archivo). **No publicitar ni cobrar sin esa revisión.** |
-| Metadatos y compartir (OG/Twitter, robots, sitemap, manifest, JSON-LD) | **Funcionando** — imagen de compartir generada con `next/og` a partir de fotos reales (`lib/og-image.tsx`), título único por página vía `title.template`, `FAQPage` derivado de `FAQ_ITEMS` sin duplicar |
+| Metadatos y compartir (OG/Twitter, robots, sitemap, manifest, JSON-LD) | **Funcionando** — imagen de compartir estática (`app/opengraph-image.png`, convención de archivo, sin `next/og`), título único por página vía `title.template`, `FAQPage` derivado de `FAQ_ITEMS` sin duplicar |
 | Rate limiting, validación de archivos, cabeceras de seguridad/CSP | **Funcionando** — ver sección "Seguridad" más abajo. Probado en vivo: bloqueo real a la 5ta foto/hora por IP, al 4to magic link/hora al mismo correo, y rechazo de un archivo con extensión `.jpg` que no era una foto real |
 | Tope diario del free tier | **Funcionando** — `FREE_TIER_DAILY_CAP` (default 200) + kill switch `FREE_TIER_ENABLED`, ver sección "Seguridad" más abajo. Probado en vivo con cap=2: 3er intento del día lanza `FreeTierUnavailableError`, un usuario con crédito sigue procesando PAID sin problema |
 | Páginas de error/carga, CTA fijo móvil, alt text real, analítica (Vercel Analytics + Speed Insights), Pixel de Meta, accesibilidad, `next/image` en landing, SEO (landings por servicio, `/acerca`, `llms.txt`, canonical, sitemap) | **Funcionando** — ver detalle abajo |
@@ -250,7 +249,7 @@ components/
 | Texto secundario — bark-muted sobre cream | 5.66:1 | ✅ (sin cambios, ya pasaba) |
 | `.btn-secondary` borde — amber sobre warm-white (no-texto, pide 3:1) | 4.46:1 | ✅ |
 
-`.btn-secondary` también cambió: su texto usaba `var(--color-amber)` directamente, que da solo 4.34:1 sobre crema — insuficiente para texto normal (aunque sí alcanza el 3:1 que pide un borde). Su `color` ahora usa `--color-amber-dark`; el borde se queda en `--color-amber`. `--shadow-amber` y los hex hardcodeados fuera de `globals.css` (`app/manifest.ts` `theme_color`, `app/global-error.tsx`, `lib/og-image.tsx`, `lib/email.ts` — ninguno puede leer variables CSS: satori, el fallback de error raíz, y el HTML de email no las soportan) se actualizaron al mismo `#A8640A` por consistencia visual.
+`.btn-secondary` también cambió: su texto usaba `var(--color-amber)` directamente, que da solo 4.34:1 sobre crema — insuficiente para texto normal (aunque sí alcanza el 3:1 que pide un borde). Su `color` ahora usa `--color-amber-dark`; el borde se queda en `--color-amber`. `--shadow-amber` y los hex hardcodeados fuera de `globals.css` (`app/manifest.ts` `theme_color`, `app/global-error.tsx`, `lib/email.ts` — ninguno puede leer variables CSS: el fallback de error raíz y el HTML de email no las soportan) se actualizaron al mismo `#A8640A` por consistencia visual.
 
 ---
 
@@ -703,7 +702,7 @@ Hoy vive en `.env` (no `.env.local`) en este entorno de desarrollo, con credenci
 
 **`proxy.ts` valida el *valor* de la cookie de sesión, no solo su presencia.** La respuesta de `/api/auth/signout` limpia `...session-token` con `Set-Cookie: ...=;` **sin `Expires`/`Max-Age`** — el navegador la conserva como cookie de sesión con valor vacío hasta que se cierra, no la borra. Un `request.cookies.has(name)` la cuenta como "hay sesión" igual, así que después de salir nunca se emitía un `uid` nuevo y `getUserId()` caía al fallback — que además era un literal `'anonymous'` compartido entre cualquiera en ese estado (ya corregido: el fallback ahora es un `crypto.randomUUID()` por request, nunca un id fijo). La regla: cualquier chequeo de "¿hay sesión?" en código que corre antes de `auth()` (o sin DB a mano, como en `proxy.ts`) debe revisar `.value`, no solo que la cookie exista.
 
-**`opengraph-image.tsx` y `twitter-image.tsx` no se pueden importar entre sí.** Son archivos de convención especial de Next.js (cada uno es su propia route); intentar `export { default } from './opengraph-image'` desde `twitter-image.tsx` compila en `next build` pero **rompe en `next dev`** con `Module not found` — Turbopack no resuelve ese import cruzado entre dos rutas especiales de forma confiable, y el fallo es silencioso desde la perspectiva del navegador: Next.js sirve una imagen de respaldo genérica (el ícono del sitio + el nombre) en vez de mostrar un error. La lógica de composición compartida vive en `lib/og-image.tsx` (módulo normal), y cada archivo de convención declara sus propios `alt`/`size`/`contentType`/`runtime` literales e importa solo la función de render. Si alguna vez aparece un `app/opengraph-image.png` suelto junto al `.tsx` (puede pasar en dev tras una corrida con errores), bórralo — es una imagen cacheada vieja que Next.js prioriza por encima del generador.
+**`opengraph-image.png` es un archivo estático, no un generador de `next/og`.** Se probó antes la variante dinámica (`opengraph-image.tsx`/`twitter-image.tsx` con `next/og`, composición en `lib/og-image.tsx`) pero se reemplazó por un PNG diseñado a mano — más control visual y cero riesgo de que un cambio en las fotos de ejemplo rompa la imagen de compartir. Next.js detecta `app/opengraph-image.png` por convención de archivo y genera `og:image` solo; no existe `twitter-image` propio, así que Twitter/X cae de vuelta al mismo `og:image` (comportamiento estándar de esa red cuando falta `twitter:image`). Si se vuelve a necesitar una imagen generada por request (por ejemplo, personalizada por página), no colocar el `.tsx` junto al `.png` en la misma carpeta — Next.js prioriza el archivo estático y el generador quedaría muerto en silencio.
 
 ### Configuración externa (auth)
 

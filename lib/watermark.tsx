@@ -1,49 +1,76 @@
 import sharp from 'sharp'
+import { ImageResponse } from 'next/og'
 
 const FREE_PREVIEW_MAX_WIDTH = 800
 const WATERMARK_LINES = ['Revívelos', 'Vista previa']
 
-function buildWatermarkSvg(width: number, height: number, lines: string[]): string {
+// El texto se renderiza con satori (next/og), no como <text> de SVG
+// compuesto vía sharp/librsvg: librsvg delega el layout de texto a
+// Pango + fontconfig, que en el runtime serverless de Vercel no tiene
+// ninguna fuente registrada — el resultado es "tofu" (glifos rotos/símbolos
+// raros) en vez del texto. satori trae su propia fuente por defecto
+// embebida (el mismo motor que ya usa lib/og-image.tsx, donde acentos como
+// "Después" ya se renderizan bien), así que no depende de fuentes del
+// sistema en ningún entorno.
+async function buildWatermarkPng(width: number, height: number, lines: string[]): Promise<Buffer> {
   const cols = 2
   const rows = 4
   const cellW = width / cols
   const cellH = height / rows
 
-  // Tamaño de fuente que quepa la línea más larga dentro de ~70% del ancho
-  // de la celda — evita que un texto de la marca de agua choque con el de
-  // la celda vecina al rotar.
+  // Misma heurística de tamaño de fuente que antes: que la línea más larga
+  // quepa en ~70% del ancho de la celda.
   const longest = Math.max(...lines.map((l) => l.length))
   const approxCharWidth = 0.56
   const maxFontFromWidth = (cellW * 0.7) / (longest * approxCharWidth)
   const fontSize = Math.max(10, Math.min(Math.round(cellH * 0.16), Math.round(maxFontFromWidth)))
-  const lineGap = fontSize * 1.4
 
-  const blocks: string[] = []
+  const cells = []
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      const cx = col * cellW + cellW / 2
-      const cy = row * cellH + cellH / 2
-      const startY = cy - ((lines.length - 1) * lineGap) / 2
-      const tspans = lines
-        .map((line, i) => `<tspan x="${cx}" y="${startY + i * lineGap}">${line}</tspan>`)
-        .join('')
-      blocks.push(`<text text-anchor="middle" class="wm">${tspans}</text>`)
+      cells.push(
+        <div
+          key={`${row}-${col}`}
+          style={{
+            position: 'absolute',
+            left: col * cellW,
+            top: row * cellH,
+            width: cellW,
+            height: cellH,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: 'rotate(-28deg)',
+          }}
+        >
+          {lines.map((line, i) => (
+            <div
+              key={i}
+              style={{
+                color: 'rgba(255,255,255,0.5)',
+                fontSize,
+                fontWeight: 600,
+              }}
+            >
+              {line}
+            </div>
+          ))}
+        </div>,
+      )
     }
   }
 
-  return `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <style>
-      .wm {
-        fill: rgba(255,255,255,0.5);
-        font-size: ${fontSize}px;
-        font-family: sans-serif;
-        font-weight: 600;
-      }
-    </style>
-    <g transform="rotate(-28 ${width / 2} ${height / 2})">
-      ${blocks.join('\n')}
-    </g>
-  </svg>`
+  const response = new ImageResponse(
+    (
+      <div style={{ width, height, display: 'flex', position: 'relative' }}>
+        {cells}
+      </div>
+    ),
+    { width, height },
+  )
+
+  return Buffer.from(await response.arrayBuffer())
 }
 
 // Reduce resolución y aplica una marca de agua repetida y discreta —
@@ -63,16 +90,16 @@ export async function applyFreePreviewWatermark(
 
   // metadata() refleja las dimensiones de ENTRADA, no las de un resize()
   // encolado — hay que calcular el tamaño final a mano antes de componer,
-  // o el SVG de marca de agua queda con un tamaño distinto al de la imagen
-  // ya redimensionada y sharp lanza "must have same dimensions or smaller".
+  // o la marca de agua queda con un tamaño distinto al de la imagen ya
+  // redimensionada y sharp lanza "must have same dimensions or smaller".
   const width = Math.min(maxWidth, originalWidth)
   const height = Math.round((originalHeight / originalWidth) * width)
 
-  const watermarkSvg = buildWatermarkSvg(width, height, lines)
+  const watermarkPng = await buildWatermarkPng(width, height, lines)
 
   const output = await image
     .resize({ width, height, fit: 'fill' })
-    .composite([{ input: Buffer.from(watermarkSvg), top: 0, left: 0 }])
+    .composite([{ input: watermarkPng, top: 0, left: 0 }])
     .jpeg({ quality: 82 })
     .toBuffer()
 
