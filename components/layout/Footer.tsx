@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { CameraIcon } from '@/components/icons/CameraIcon'
+import { InstagramIcon } from '@/components/icons/InstagramIcon'
+import { FacebookIcon } from '@/components/icons/FacebookIcon'
 
 export function Footer() {
   return (
@@ -65,6 +67,28 @@ export function Footer() {
             </Link>
           ))}
         </nav>
+
+        {/* Redes sociales */}
+        <div className="flex items-center justify-center gap-4 mt-6">
+          <a
+            href="https://www.instagram.com/revivelos.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Revívelos en Instagram"
+            style={{ color: 'var(--color-bark-muted)' }}
+          >
+            <InstagramIcon size={20} />
+          </a>
+          <button
+            type="button"
+            disabled
+            aria-label="Facebook de Revívelos, próximamente"
+            title="Próximamente"
+            style={{ color: 'var(--color-sepia-300)', cursor: 'not-allowed', background: 'none', border: 'none', padding: 0 }}
+          >
+            <FacebookIcon size={20} />
+          </button>
+        </div>
 
         <p
           className="text-center text-xs mt-6"

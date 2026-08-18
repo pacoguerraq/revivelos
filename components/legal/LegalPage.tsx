@@ -76,8 +76,8 @@ export function LegalPage({
 
         <p className="text-sm mt-12" style={{ color: 'var(--color-bark-muted)' }}>
           ¿Dudas sobre este documento? Escríbenos a{' '}
-          <a href="mailto:franciscoguerraquintanilla@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
-            franciscoguerraquintanilla@gmail.com
+          <a href="mailto:contacto.revivelos@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+            contacto.revivelos@gmail.com
           </a>
           .
         </p>

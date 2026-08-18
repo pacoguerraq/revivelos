@@ -45,8 +45,8 @@ export default function AcercaPage() {
           <p>
             Si tienes una duda, una queja o simplemente quieres contarme cómo te fue con tu foto, escríbeme
             directo a{' '}
-            <a href="mailto:franciscoguerraquintanilla@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
-              franciscoguerraquintanilla@gmail.com
+            <a href="mailto:contacto.revivelos@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+              contacto.revivelos@gmail.com
             </a>
             . Lo leo yo, no un equipo de soporte.
           </p>

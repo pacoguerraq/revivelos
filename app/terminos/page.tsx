@@ -108,8 +108,8 @@ export default function TerminosPage() {
           body: (
             <p>
               Si crees que una foto subida a Revívelos usa contenido tuyo sin tu autorización, escríbenos a{' '}
-              <a href="mailto:franciscoguerraquintanilla@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
-                franciscoguerraquintanilla@gmail.com
+              <a href="mailto:contacto.revivelos@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+                contacto.revivelos@gmail.com
               </a>{' '}
               describiendo la foto y por qué consideras que se subió sin permiso. Revisamos cada solicitud caso
               por caso y, si procede, eliminamos la foto y su resultado de nuestros servidores.

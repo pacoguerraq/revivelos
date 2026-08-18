@@ -31,8 +31,8 @@ export default function PrivacidadPage() {
               Revívelos (operado bajo el dominio {SITE_HOST}) es responsable del tratamiento de tus datos
               personales conforme a la Ley Federal de Protección de Datos Personales en Posesión de los
               Particulares (LFPDPPP). Puedes contactarnos en cualquier momento a{' '}
-              <a href="mailto:franciscoguerraquintanilla@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
-                franciscoguerraquintanilla@gmail.com
+              <a href="mailto:contacto.revivelos@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+                contacto.revivelos@gmail.com
               </a>
               .
             </p>
@@ -149,8 +149,8 @@ export default function PrivacidadPage() {
               están desactualizados o son inexactos, <strong>Cancelar</strong>los cuando consideres que no se
               usan conforme a este aviso, y <strong>Oponerte</strong> a su tratamiento para fines específicos.
               Para ejercer cualquiera de estos derechos, escríbenos a{' '}
-              <a href="mailto:franciscoguerraquintanilla@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
-                franciscoguerraquintanilla@gmail.com
+              <a href="mailto:contacto.revivelos@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>
+                contacto.revivelos@gmail.com
               </a>{' '}
               indicando tu correo de registro y qué quieres solicitar. Te responderemos en un plazo razonable.
             </p>

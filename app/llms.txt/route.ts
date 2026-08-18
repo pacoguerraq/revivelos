@@ -30,7 +30,7 @@ Idioma del sitio: español de México. Público: personas de 45-70 años que qui
 
 ## Contacto
 
-Correo: franciscoguerraquintanilla@gmail.com. No hay soporte por WhatsApp ni chat en vivo.
+Correo: contacto.revivelos@gmail.com. No hay soporte por WhatsApp ni chat en vivo.
 `
 
 export function GET() {
