@@ -79,15 +79,15 @@ export function Footer() {
           >
             <InstagramIcon size={20} />
           </a>
-          <button
-            type="button"
-            disabled
-            aria-label="Facebook de Revívelos, próximamente"
-            title="Próximamente"
-            style={{ color: 'var(--color-sepia-300)', cursor: 'not-allowed', background: 'none', border: 'none', padding: 0 }}
+          <a
+            href="https://www.facebook.com/profile.php?id=61593518967463"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Revívelos en Facebook"
+            style={{ color: 'var(--color-bark-muted)' }}
           >
             <FacebookIcon size={20} />
-          </button>
+          </a>
         </div>
 
         <p
