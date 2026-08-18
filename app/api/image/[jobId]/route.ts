@@ -22,8 +22,18 @@ export async function GET(
   // 'poster' reutiliza la restauración intermedia (job.restoredUrl) como
   // cuadro representativo del video en jobs ANIMATE — no se genera ni
   // guarda ninguna imagen nueva para esto.
-  const variant = v === 'output' ? 'output' : v === 'poster' ? 'poster' : 'input'
-  const blobUrl = variant === 'output' ? job.outputUrl : variant === 'poster' ? job.restoredUrl : job.inputUrl
+  const variant = v === 'output' ? 'output' : v === 'poster' ? 'poster' : v === 'thumb' ? 'thumb' : 'input'
+
+  let blobUrl: string | null
+  if (variant === 'output') blobUrl = job.outputUrl
+  else if (variant === 'poster') blobUrl = job.restoredUrl
+  else if (variant === 'thumb') {
+    // Fallback para jobs creados antes de Job.thumbnailUrl (ver
+    // AGENTS.md, "Miniaturas de /mis-fotos"): sirve el original en su
+    // lugar — más pesado, pero sigue funcionando sin backfill. Para video
+    // el "original" aquí es la restauración (restoredUrl), nunca el video.
+    blobUrl = job.thumbnailUrl ?? (job.type === 'ANIMATE' ? job.restoredUrl : job.outputUrl)
+  } else blobUrl = job.inputUrl
 
   if (!blobUrl) {
     return new NextResponse('Imagen no encontrada', { status: 404 })
@@ -47,7 +57,14 @@ export async function GET(
 
   const headers: Record<string, string> = {
     'Content-Type': blobResponse.headers.get('content-type') ?? 'image/jpeg',
-    'Cache-Control': 'private, max-age=3600',
+    // `private`, nunca `public` — esta ruta valida dueño en cada request
+    // (arriba), así que una caché compartida (CDN/proxy) no debe guardar la
+    // respuesta y servírsela a otro usuario. `immutable` + un max-age largo
+    // sí son seguros: el contenido en (jobId, variant) no se sobreescribe
+    // una vez escrito (salvo el backfill retroactivo de thumbnailUrl, ver
+    // AGENTS.md — el navegador puede quedarse con el fallback grande un
+    // rato tras un backfill, no es un problema de corrección).
+    'Cache-Control': 'private, max-age=31536000, immutable',
     'Accept-Ranges': 'bytes',
   }
   const contentRange = blobResponse.headers.get('content-range')

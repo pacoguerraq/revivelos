@@ -43,6 +43,7 @@ npx prisma studio                              # explorar la DB de Neon
 - **El descuento de créditos nunca es leer-y-luego-escribir.** `lib/jobs.ts` → `createJobAndCharge()` crea el `Job` y aplica un `UPDATE` condicional (`updateMany` con `WHERE credits >= costo` o `WHERE freeUsed = false`) dentro de la misma `$transaction`. Si el `count` resultante es 0, se lanza `InsufficientCreditsError` y Prisma revierte todo — incluida la creación del job, para no dejar huérfanos. No cambiar este patrón por un `findUnique` + `update` separados.
 - Los enums de Prisma (`JobStatus`, `JobType` en mayúsculas) no son los tipos de la API pública (`lib/types.ts`, minúsculas) — `toApiJob()` en `lib/jobs.ts` es el único punto de conversión. Si se agrega un campo al `Job` de Prisma que deba viajar al cliente, se añade ahí, no se expone el objeto de Prisma directo.
 - `CreditTransaction.jobId` es `onDelete: SetNull` a propósito: el cron de limpieza de jobs a 30 días (`app/api/cron/cleanup/route.ts`, **funcionando**) borra el `Job` sin arrastrar el historial financiero — verificado en vivo, ver sección "Borrado a 30 días" más abajo.
+- **`npx prisma migrate dev` no funciona en este repo — falla contra la shadow DB con `P1014: The underlying table for model 'Job' does not exist`.** Causa: el historial de migraciones tiene dos migraciones fuera de orden cronológico (`20260814173128_fal_integration` hace `ALTER TABLE "Job"` y su timestamp es *anterior* al de `20260814183634_init`, que es la que de verdad crea la tabla — probablemente de un rename/reordenamiento manual en algún momento). La shadow DB aplica migraciones en orden de timestamp, así que `fal_integration` intenta alterar una tabla que en ese punto de la secuencia todavía no existe. Esto es preexistente, no algo que un cambio nuevo de schema pueda arreglar. **Workaround usado para agregar `Job.thumbnailUrl`:** crear la carpeta de migración a mano (`prisma/migrations/<timestamp>_<nombre>/migration.sql`) con el SQL exacto, y aplicarla con `npx prisma migrate deploy` (no usa shadow DB, solo corre el SQL pendiente contra la DB real) + `npx prisma generate`. Si se necesita otra migración, mismo patrón — o arreglar el orden del historial primero, que es un cambio más grande y no se hizo aquí por estar fuera de alcance.
 
 ---
 
@@ -110,6 +111,7 @@ lib/
   fal.ts                          # config de fal, prompts validados, submitRestore/submitAnimate, extractores de payload
   fal-verify.ts                   # verificación ED25519 del webhook contra el JWKS de fal (cacheado 24h)
   watermark.ts                    # sharp: resize + marca de agua (2 líneas) para la vista previa gratuita
+  thumbnail.ts                    # sharp: miniatura WebP ~400px para la cuadrícula de /mis-fotos — ver "Carga percibida de /mis-fotos"
   fingerprint.ts                  # cliente: hash de canvas+navegador — 2da capa antiabuso del free tier
   pricing.ts                      # RESTORE_COST=1, ANIMATE_COST=3, PACKAGES[], calcEquivalencias()
   ejemplos.ts                     # EJEMPLOS[] — rutas de imágenes en /public/ejemplos/
@@ -141,7 +143,8 @@ app/
   crear/page.tsx                  # sube foto → elige acción → POST /api/jobs
   entrar/page.tsx                 # login: botón de Google + formulario de magic link (Server Actions), acepta ?callbackUrl (validado, solo rutas propias)
   entrar/revisa-tu-correo/page.tsx # pantalla post-envío del magic link
-  mis-fotos/page.tsx              # galería del usuario autenticado, paginada por cursor
+  mis-fotos/page.tsx              # galería del usuario autenticado, paginada por cursor (12/página) — streaming vía Suspense, ver "Carga percibida de /mis-fotos"
+  mis-fotos/loading.tsx           # fallback de navegación entre rutas (Link → /mis-fotos), reusa LoadingSpinner
   procesando/[jobId]/page.tsx     # wrapper del poller — mensajes de espera honestos según el tipo
   resultado/[jobId]/page.tsx      # muestra imagen o <video> según Job.type + botones
   comprar/[packageId]/page.tsx    # destino de callbackUrl tras /entrar — retoma el checkout de ese paquete automáticamente
@@ -182,6 +185,7 @@ components/
     Accordion.tsx                 # FAQ items con animación max-height
     ShareButton.tsx               # botón de compartir resultado
     DownloadButton.tsx            # descarga vía fetch+blob con loader — necesario para video (varios MB)
+    GalleryThumbnail.tsx           # 'use client' — miniatura por tarjeta de /mis-fotos: loading→loaded|error, fade-in, sin porcentaje de progreso
     VideoPlayer.tsx                # 'use client' — <video> sobre /api/image?v=output (con Range), poster = restauración, estado de carga/buffering visible, reintento
     StickyMobileCta.tsx           # CTA fijo en móvil tras pasar el hero, oculto en /crear, /procesando, /resultado
     LoadingSpinner.tsx             # el spinner que antes vivía solo en app/loading.tsx — reusado por los loading.tsx locales de cada ruta
@@ -198,7 +202,7 @@ components/
 | Identidad anónima (cookie uid) | Funcionando — y ya no se emite si hay sesión autenticada (`proxy.ts`) |
 | Autenticación (Google + magic link) | **Funcionando** — Auth.js v5 + `@auth/prisma-adapter`, sesión en DB. `lib/auth.ts` |
 | Fusión de identidad anónimo → cuenta | **Funcionando** — un solo algoritmo cubre los 3 casos (`lib/auth-merge.ts` `mergeAnonymousUser`), llamado desde `events.signIn` en `lib/auth.ts` (no desde `callbacks.signIn` — ver nota abajo), probado contra la DB real incluyendo un job en vuelo fusionado a mitad de procesamiento |
-| Galería `/mis-fotos` | **Funcionando** — requiere sesión, paginación por cursor, aviso de borrado a 30 días |
+| Galería `/mis-fotos` | **Funcionando** — requiere sesión, paginación por cursor (12/página), aviso de borrado a 30 días. Carga percibida optimizada: encabezado + esqueleto vía `<Suspense>` (CLS 0.462→0), miniaturas WebP reales (`Job.thumbnailUrl`, generadas al completar el job, fallback al original para jobs previos a este campo, sin backfill retroactivo todavía), carga progresiva por tarjeta con `loading="lazy"` nativo, videos ya no se cargan como `<video>` en la cuadrícula. Ver "Carga percibida de /mis-fotos" |
 | Subida de foto y creación de job | Funcionando — sube a Vercel Blob, persiste en Postgres |
 | Base de datos | **Funcionando** — Prisma + Neon Postgres. `User`, `Job`, `CreditTransaction` |
 | Créditos | **Funcionando** — descuento atómico en transacción (`lib/jobs.ts` `createJobAndCharge`), auditable vía `CreditTransaction`. Prioridad de tier corregida: crédito suficiente siempre gana sobre el free tier, ver sección "Prioridad tier PAID vs. FREE" |
@@ -467,6 +471,56 @@ Nota para quien lea la sección de administración: la mención de `app/loading.
 
 - **CSS render-blocking:** Lighthouse marca `_next/static/chunks/*.css` (el único stylesheet del sitio, ~8 KB, `globals.css` compilado) como bloqueante, ~150-160ms estimados en 4G. Es el único stylesheet del sitio — no hay nada que diferir sin inlining de CSS crítico (herramienta nueva, fuera de alcance por la restricción de "sin dependencias nuevas"). Dejado como está: el costo es mínimo (un solo archivo de 8 KB) y ya es render-blocking por diseño (evita FOUC).
 - **27 KB de JS sin usar:** un único chunk compartido del framework de Next/React (`147-*.js`, ~233 KB / 73 KB gzip), no una librería identificable de terceros que se pueda diferir o eliminar. Es código compartido entre rutas — parte de ese 27 KB reportado en `/` pertenece a código que sí se usa en otras páginas del mismo chunk. No se tocó: el riesgo de romper el code-splitting automático de Next para ahorrar <2% del payload total no vale la pena.
+
+## Carga percibida de `/mis-fotos`
+
+Mismo problema estructural que el CLS del landing (`Header` async sin `Suspense` propio, ver arriba), aplicado a esta ruta: `MisFotosPage` hacía `await auth()` + la consulta de jobs directo en el componente de página, así que **toda la página** —incluido el encabezado y el aviso de borrado a 30 días, que no dependen de ningún dato— esperaba a la DB antes de mandar el primer byte de contenido real. Con `mis-fotos/loading.tsx` de por medio (agregado en la ronda de CLS del landing), el usuario veía el spinner genérico de página completa y luego, de golpe, toda la galería — mismo patrón de salto de layout, mismo remedio.
+
+**Medido con Lighthouse local (mobile + throttling simulado), cuenta de prueba con 14 jobs (mezcla de fotos y videos, incluidos casos sin `thumbnailUrl` y con una miniatura rota):**
+
+| Métrica | Antes | Después |
+|---|---|---|
+| Performance | 58 | 96 |
+| **CLS** | **0.462** | **0** |
+| LCP | 5.9s | 2.8s |
+| Speed Index | 2.2s | 1.3s |
+| Payload total | 1,573 KB | 797 KB |
+
+El payload cayó ~49% en esta corrida con imágenes de prueba relativamente livianas (60-125 KB cada una, imágenes de stock de `/public/ejemplos/`) — con fotos reales de fal (varios cientos de KB a unos MB cada una) el ahorro relativo de servir una miniatura de ~10-30 KB en vez del archivo completo es bastante mayor.
+
+### 1. Streaming — `auth()` y la consulta de jobs, no la página entera
+
+`app/mis-fotos/page.tsx` ya no es `async`: devuelve el encabezado + el aviso de inmediato, con un `<Suspense fallback={<GallerySkeleton />}>` alrededor de `Gallery` — el único componente que hace `await auth()`, valida el `cursor` y consulta `prisma.job.findMany`. `GallerySkeleton` reproduce la cuadrícula real celda por celda: mismo `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4`, mismo `aspectRatio: '1/1'` en el área de imagen, y un bloque de `height: 56` para el placeholder del botón (56px es el `min-height` real de `.btn` en `globals.css` — no un número inventado). `PAGE_SIZE` bajó de 20 a **12** (divide exacto entre 2, 3 y 4 columnas — la primera página nunca corta una fila a la mitad, y la consulta es más rápida).
+
+**El `redirect('/entrar')` de un usuario sin sesión ahora vive dentro de `Gallery`, no en el componente de página.** Verificado que esto no expone nada: sin cookie de sesión válida, la respuesta HTTP sigue siendo `200` con el encabezado + el esqueleto (sin ningún dato de galería) y una señal `NEXT_REDIRECT` embebida que Next.js convierte en una navegación del lado del cliente hacia `/entrar` — el mismo tipo de particularidad de streaming ya documentado en este archivo para `notFound()` en rutas con `loading.tsx` (ver "Panel de administración"), aplicado aquí a `redirect()`. No es una ruta sensible sin este mecanismo: la consulta real de jobs solo corre después de confirmar `session.user.id`, así que nunca se ejecuta para un visitante sin sesión.
+
+### 2. Carga progresiva por tarjeta — `components/ui/GalleryThumbnail.tsx`
+
+Client Component nuevo, uno por tarjeta: estado `loading → loaded | error` con `useState`, fade-in vía `opacity` + `transition` en el `onLoad` de la `<img>`, ícono + "No se pudo cargar" en `onError` (sin romper la cuadrícula — solo esa celda cambia). **Sin porcentaje de progreso** — solo un spinner pequeño mientras `loading`, tal como se pidió (no hay forma confiable de medir el progreso de una sola imagen, y un porcentaje atorado es peor que un spinner). `loading="lazy"` nativo en todas las tarjetas salvo las primeras `EAGER_COUNT = 4` (cubre la primera fila en el breakpoint más angosto, `grid-cols-2`), que usan `loading="eager"`.
+
+Los videos **ya no se cargan como `<video>` en la cuadrícula** — `GalleryCard` usa `GalleryThumbnail` con `job.thumbnailUrl` tanto para fotos como para videos (con el ícono de play + la etiqueta "Video" superpuestos encima para los videos). Antes, cada tarjeta de video montaba un `<video preload="metadata">` apuntando al archivo completo — con 3-4 videos en una página de 12, eso es varios MB que nunca hacía falta descargar solo para mostrar una miniatura.
+
+### 3. Miniaturas reales — `Job.thumbnailUrl` + `lib/thumbnail.ts`
+
+Campo nuevo en `Job` (migración `20260819010000_add_job_thumbnail_url` — ver nota de la shadow DB en la sección Prisma de arriba): `thumbnailUrl String?`, WebP de ~400px de ancho generado con `sharp` (`lib/thumbnail.ts` → `generateThumbnail()`), sin dependencias nuevas.
+
+**Dónde se genera** (`app/api/webhooks/falai/route.ts`), a partir de bytes que la función *ya tenía descargados* — cero llamadas de red extra:
+- **RESTORE:** en `handleFinalSuccess`, desde los mismos bytes que se suben como `outputUrl` — incluida la marca de agua si es vista previa gratuita, para que la miniatura coincida con lo que el usuario realmente ve.
+- **ANIMATE:** en `handleRestoreLegDone`, desde la restauración intermedia (los bytes que se suben a `restoredUrl`). **El video nunca se decodifica para esto** — la miniatura de un job de video sale de la misma imagen que ya se usa como `posterUrl`, solo que a 400px y en WebP en vez de la restauración completa en JPEG.
+
+Ambos casos incluyen `thumbnailUrl` en el mismo `updateMany` atómico que ya reclama el salto de etapa (o el estado `COMPLETED`) — no es una escritura separada, así que no hay ventana donde el job esté completo sin su miniatura por una carrera entre dos entregas del webhook.
+
+**Fallback para jobs viejos, sin backfill retroactivo todavía:** `toApiJob()` siempre construye `thumbnailUrl: /api/image/[jobId]?v=thumb` para cualquier job con `outputUrl` o `restoredUrl` — el proxy (`app/api/image/[jobId]/route.ts`) resuelve esa variante así:
+```
+job.thumbnailUrl ?? (job.type === 'ANIMATE' ? job.restoredUrl : job.outputUrl)
+```
+Si `Job.thumbnailUrl` es `null` (cualquier job creado antes de este campo), sirve el original completo — más pesado, pero la galería sigue funcionando sin necesidad de migrar datos antes de desplegar. **Backfill retroactivo, si hace falta:** un script que recorra `Job.findMany({ where: { status: 'COMPLETED', thumbnailUrl: null } })`, descargue `outputUrl` (o `restoredUrl` para `ANIMATE`) y llame a `generateThumbnail()` + `storage.put()` + `update`. No se implementó en esta ronda — el fallback ya cubre el caso sin urgencia de migrar nada.
+
+### 4. Proxy — cache inmutable, `private`
+
+`Cache-Control` pasó de `private, max-age=3600` a **`private, max-age=31536000, immutable`** para las cuatro variantes (`input`/`output`/`poster`/`thumb`). `private` se mantiene sin cambios — la ruta valida dueño en cada request (`getJobForUser`), así que una caché compartida (CDN/proxy intermedio) nunca debe guardar la respuesta; solo el navegador del dueño la cachea. `immutable` es seguro porque el contenido en `(jobId, variant)` no se sobreescribe una vez escrito — con una excepción documentada: si algún día se corre el backfill retroactivo de arriba, un navegador que ya cacheó el fallback (el original completo) para `v=thumb` se queda con esa versión más pesada hasta que expire la caché (~1 año) o el usuario limpie caché — no es un problema de corrección (es la misma foto), solo de peso, y no bloquea nada.
+
+Verificado en vivo contra la DB real: un usuario autenticado pidiendo `/api/image/<job-de-otro-usuario>?v=thumb` (o `?v=output`) recibe `404`, exactamente igual que antes de este cambio — la validación de propiedad (`getJobForUser`, `job.userId === userId`) corre antes de siquiera mirar qué variante se pidió.
 
 ---
 

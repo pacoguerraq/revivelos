@@ -1,9 +1,11 @@
+import { Suspense } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { toApiJob, RETENTION_DAYS } from '@/lib/jobs'
 import { DownloadButton } from '@/components/ui/DownloadButton'
+import { GalleryThumbnail } from '@/components/ui/GalleryThumbnail'
 import { FilmIcon } from '@/components/icons/FilmIcon'
 import { PlayIcon } from '@/components/icons/PlayIcon'
 import { CameraIcon } from '@/components/icons/CameraIcon'
@@ -18,43 +20,28 @@ export const metadata = {
   openGraph: { title: 'Mis fotos — Revívelos', description },
 }
 
-const PAGE_SIZE = 20
+// 12 divide exacto entre los 3 breakpoints de la cuadrícula (2/3/4
+// columnas) — la primera página nunca deja una fila a medias, y es chica
+// a propósito para que la consulta y el streaming de la primera tanda de
+// miniaturas sean rápidos.
+const PAGE_SIZE = 12
+// Filas visibles sin scroll en el breakpoint más angosto (grid-cols-2) —
+// esas tarjetas cargan de inmediato; el resto usa loading="lazy" nativo.
+const EAGER_COUNT = 4
 
 interface Props {
   searchParams: Promise<{ cursor?: string }>
 }
 
-export default async function MisFotosPage({ searchParams }: Props) {
-  const session = await auth()
-  if (!session?.user?.id) redirect('/entrar')
-
-  const { cursor: rawCursor } = await searchParams
-
-  // Prisma ubica la fila del cursor por su id ÚNICO, sin aplicar el `where`
-  // — así que un cursor con el id de un job ajeno igual "funciona" como
-  // punto de partida (no expone los datos del otro job, el resultado sigue
-  // filtrado por userId, pero sí deja usar un id arbitrario como oráculo de
-  // existencia). Se valida la propiedad del cursor antes de usarlo.
-  let cursor: string | undefined
-  if (rawCursor) {
-    const cursorJob = await prisma.job.findUnique({ where: { id: rawCursor }, select: { userId: true } })
-    if (cursorJob?.userId === session.user.id) cursor = rawCursor
-  }
-
-  const rawJobs = await prisma.job.findMany({
-    where: { userId: session.user.id, status: 'COMPLETED' },
-    orderBy: { createdAt: 'desc' },
-    take: PAGE_SIZE + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-  })
-
-  const hasMore = rawJobs.length > PAGE_SIZE
-  const pageJobs = rawJobs.slice(0, PAGE_SIZE)
-  const items = pageJobs.map(toApiJob)
-  const nextCursor = hasMore ? pageJobs[pageJobs.length - 1].id : null
-
-  const isEmpty = items.length === 0 && !cursor
-
+// Sin `async` a propósito: si esta función esperara `auth()` (una consulta
+// real a la DB — sesión con `strategy: 'database'`) antes de devolver JSX,
+// TODO lo que sigue —incluido el encabezado y el aviso de borrado, que no
+// dependen de ningún dato— queda atrapado detrás del `loading.tsx` de esta
+// ruta (mismo mecanismo que causaba el CLS de `Header` en el layout raíz,
+// ver AGENTS.md "Rendimiento del landing"). `auth()` + la consulta de jobs
+// se mueven a `Gallery`, el único componente async, envuelto en su propio
+// `<Suspense>` — así el resto de la página se envía de inmediato.
+export default function MisFotosPage({ searchParams }: Props) {
   return (
     <div className="py-12 sm:py-16">
       <div className="section-wrap">
@@ -70,31 +57,68 @@ export default async function MisFotosPage({ searchParams }: Props) {
           </p>
         </div>
 
-        {isEmpty ? (
-          <EmptyState />
-        ) : (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {items.map((job, i) => (
-                <GalleryCard key={job.id} job={job} createdAt={pageJobs[i].createdAt} />
-              ))}
-            </div>
-
-            {nextCursor && (
-              <div className="flex justify-center mt-8">
-                <Link href={`/mis-fotos?cursor=${nextCursor}`} className="btn btn-secondary">
-                  Ver más
-                </Link>
-              </div>
-            )}
-          </>
-        )}
+        <Suspense fallback={<GallerySkeleton />}>
+          <Gallery searchParams={searchParams} />
+        </Suspense>
       </div>
     </div>
   )
 }
 
-function GalleryCard({ job, createdAt }: { job: Job; createdAt: Date }) {
+async function Gallery({ searchParams }: Props) {
+  const session = await auth()
+  if (!session?.user?.id) redirect('/entrar')
+  const userId = session.user.id
+
+  const { cursor: rawCursor } = await searchParams
+
+  // Prisma ubica la fila del cursor por su id ÚNICO, sin aplicar el `where`
+  // — así que un cursor con el id de un job ajeno igual "funciona" como
+  // punto de partida (no expone los datos del otro job, el resultado sigue
+  // filtrado por userId, pero sí deja usar un id arbitrario como oráculo de
+  // existencia). Se valida la propiedad del cursor antes de usarlo.
+  let cursor: string | undefined
+  if (rawCursor) {
+    const cursorJob = await prisma.job.findUnique({ where: { id: rawCursor }, select: { userId: true } })
+    if (cursorJob?.userId === userId) cursor = rawCursor
+  }
+
+  const rawJobs = await prisma.job.findMany({
+    where: { userId, status: 'COMPLETED' },
+    orderBy: { createdAt: 'desc' },
+    take: PAGE_SIZE + 1,
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+  })
+
+  const hasMore = rawJobs.length > PAGE_SIZE
+  const pageJobs = rawJobs.slice(0, PAGE_SIZE)
+  const items = pageJobs.map(toApiJob)
+  const nextCursor = hasMore ? pageJobs[pageJobs.length - 1].id : null
+
+  const isEmpty = items.length === 0 && !cursor
+
+  if (isEmpty) return <EmptyState />
+
+  return (
+    <>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {items.map((job, i) => (
+          <GalleryCard key={job.id} job={job} createdAt={pageJobs[i].createdAt} eager={i < EAGER_COUNT} />
+        ))}
+      </div>
+
+      {nextCursor && (
+        <div className="flex justify-center mt-8">
+          <Link href={`/mis-fotos?cursor=${nextCursor}`} className="btn btn-secondary">
+            Ver más
+          </Link>
+        </div>
+      )}
+    </>
+  )
+}
+
+function GalleryCard({ job, createdAt, eager }: { job: Job; createdAt: Date; eager: boolean }) {
   const isVideo = job.type === 'animate'
   const expiresAt = new Date(createdAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1000)
   const expiresLabel = new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }).format(expiresAt)
@@ -105,19 +129,18 @@ function GalleryCard({ job, createdAt }: { job: Job; createdAt: Date }) {
       className="card overflow-hidden flex flex-col"
       style={{ border: '1px solid var(--color-sepia-100)' }}
     >
-      <div className="relative" style={{ aspectRatio: '1/1', background: '#000' }}>
-        {isVideo ? (
+      <div className="relative" style={{ aspectRatio: '1/1' }}>
+        {job.thumbnailUrl && (
+          <GalleryThumbnail
+            src={job.thumbnailUrl}
+            alt={isVideo ? 'Video animado — cuadro representativo' : 'Foto restaurada'}
+            eager={eager}
+          />
+        )}
+        {isVideo && (
           <>
-            <video
-              src={job.outputUrl ?? undefined}
-              muted
-              playsInline
-              preload="metadata"
-              className="w-full h-full"
-              style={{ objectFit: 'cover' }}
-            />
             <div
-              className="absolute inset-0 flex items-center justify-center"
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
               style={{ background: 'rgba(0,0,0,0.15)' }}
             >
               <div
@@ -134,14 +157,6 @@ function GalleryCard({ job, createdAt }: { job: Job; createdAt: Date }) {
               <FilmIcon size={12} /> Video
             </span>
           </>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element -- imagen dinámica servida por proxy autenticado
-          <img
-            src={job.outputUrl ?? undefined}
-            alt="Foto restaurada"
-            className="w-full h-full"
-            style={{ objectFit: 'cover' }}
-          />
         )}
       </div>
 
@@ -162,6 +177,34 @@ function GalleryCard({ job, createdAt }: { job: Job; createdAt: Date }) {
           />
         )}
       </div>
+    </div>
+  )
+}
+
+// Mismas dimensiones exactas que GalleryCard: mismo grid, misma
+// `aspectRatio: '1/1'` del área de imagen, mismo alto de texto/botón —
+// para no introducir un salto de layout cuando la cuadrícula real la
+// reemplaza.
+function GallerySkeleton() {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4" aria-hidden>
+      {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+        <div
+          key={i}
+          className="card overflow-hidden flex flex-col"
+          style={{ border: '1px solid var(--color-sepia-100)' }}
+        >
+          <div className="relative" style={{ aspectRatio: '1/1', background: 'var(--color-sepia-100)' }} />
+          <div className="p-3 flex flex-col gap-2 flex-1">
+            <div className="flex flex-col gap-1.5">
+              <div className="rounded" style={{ width: '60%', height: 14, background: 'var(--color-sepia-100)' }} />
+              <div className="rounded" style={{ width: '85%', height: 12, background: 'var(--color-sepia-100)' }} />
+            </div>
+            {/* 56px = min-height real de .btn (globals.css) */}
+            <div className="rounded" style={{ height: 56, background: 'var(--color-sepia-100)' }} />
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

@@ -12,6 +12,10 @@ export interface Job {
   // Solo se llena para jobs 'animate' completos — reutiliza la restauración
   // intermedia como cuadro representativo del video antes de que cargue.
   posterUrl: string | null
+  // Miniatura ligera para la cuadrícula de /mis-fotos — nunca null para un
+  // job completado: si no hay Job.thumbnailUrl en la DB (jobs previos a este
+  // campo), /api/image/[jobId]?v=thumb cae al original server-side.
+  thumbnailUrl: string | null
   watermarked: boolean
   error: string | null
   createdAt: string

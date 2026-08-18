@@ -11,6 +11,7 @@ import {
 import { storage } from '@/lib/storage'
 import { failJobAndRefund } from '@/lib/jobs'
 import { applyFreePreviewWatermark } from '@/lib/watermark'
+import { generateThumbnail } from '@/lib/thumbnail'
 
 // El video de kling puede tardar en descargarse + sharp puede tomar unos
 // segundos — Vercel corta funciones cortas por default.
@@ -105,9 +106,20 @@ async function handleRestoreLegDone(job: PrismaJob, payload: unknown): Promise<v
     'image/jpeg',
   )
 
+  // La miniatura de /mis-fotos para un job ANIMATE sale de la restauración
+  // (esta misma imagen), nunca del video — el video no se decodifica para
+  // esto. Se genera aquí, a partir de bytes ya descargados, sin una
+  // llamada de red extra.
+  const thumbnailBytes = await generateThumbnail(bytes)
+  const thumbnailBlobUrl = await storage.put(
+    `jobs/${job.userId}/${job.id}-thumb.webp`,
+    thumbnailBytes,
+    'image/webp',
+  )
+
   const claimed = await prisma.job.updateMany({
     where: { id: job.id, falRequestId: job.falRequestId, stage: 'RESTORING', status: 'PROCESSING' },
-    data: { stage: 'ANIMATING', restoredUrl: restoredBlobUrl },
+    data: { stage: 'ANIMATING', restoredUrl: restoredBlobUrl, thumbnailUrl: thumbnailBlobUrl },
   })
   if (claimed.count === 0) {
     // Otra entrega concurrente ya reclamó este salto de etapa.
@@ -141,12 +153,24 @@ async function handleFinalSuccess(job: PrismaJob, payload: unknown): Promise<voi
   const extension = isVideo ? 'mp4' : 'jpg'
   const blobUrl = await storage.put(`jobs/${job.userId}/${job.id}-output.${extension}`, bytes, contentType)
 
+  // Para ANIMATE, thumbnailUrl ya se generó en handleRestoreLegDone a partir
+  // de la restauración — el video nunca se decodifica para una miniatura.
+  // Para RESTORE, se genera aquí desde los mismos bytes que ya se subieron
+  // como output (incluida la marca de agua si es vista previa gratuita, para
+  // que la miniatura coincida con lo que el usuario realmente ve).
+  let thumbnailUrl: string | undefined
+  if (!isVideo) {
+    const thumbnailBytes = await generateThumbnail(bytes)
+    thumbnailUrl = await storage.put(`jobs/${job.userId}/${job.id}-thumb.webp`, thumbnailBytes, 'image/webp')
+  }
+
   const claimed = await prisma.job.updateMany({
     where: { id: job.id, falRequestId: job.falRequestId, status: 'PROCESSING' },
-    data: { status: 'COMPLETED', stage: 'DONE', outputUrl: blobUrl },
+    data: { status: 'COMPLETED', stage: 'DONE', outputUrl: blobUrl, ...(thumbnailUrl ? { thumbnailUrl } : {}) },
   })
   if (claimed.count === 0) {
-    // Otra entrega ya completó el job — no dejamos un blob huérfano.
+    // Otra entrega ya completó el job — no dejamos blobs huérfanos.
     await storage.delete(blobUrl).catch(() => {})
+    if (thumbnailUrl) await storage.delete(thumbnailUrl).catch(() => {})
   }
 }

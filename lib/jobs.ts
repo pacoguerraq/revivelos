@@ -36,6 +36,7 @@ export function toApiJob(job: PrismaJob): Job {
     inputUrl: `/api/image/${job.id}?v=input`,
     outputUrl: job.outputUrl ? `/api/image/${job.id}?v=output` : null,
     posterUrl: job.type === 'ANIMATE' && job.restoredUrl ? `/api/image/${job.id}?v=poster` : null,
+    thumbnailUrl: job.outputUrl || job.restoredUrl ? `/api/image/${job.id}?v=thumb` : null,
     watermarked: job.watermarked,
     error: job.error,
     createdAt: job.createdAt.toISOString(),

@@ -139,6 +139,15 @@ model Job {
   inputUrl     String
   outputUrl    String?
   restoredUrl  String? // salida intermedia de la restauración; entrada del video en jobs ANIMATE
+  // Miniatura WebP (~400px de ancho) para la cuadrícula de /mis-fotos — sin
+  // esto, cada tarjeta descargaba el archivo completo (la foto final o el
+  // video entero) solo para mostrarlo a 200px. Se genera al completar el
+  // job (desde los bytes ya descargados, sin una llamada de red extra): la
+  // imagen final para RESTORE, la restauración intermedia para ANIMATE (el
+  // video nunca se decodifica para esto). Null en jobs creados antes de este
+  // campo — el proxy /api/image/[jobId]?v=thumb cae al original si falta;
+  // ver lib/thumbnail.ts y AGENTS.md, sección "Miniaturas de /mis-fotos".
+  thumbnailUrl String?
   watermarked  Boolean   @default(false)
   falRequestId String?   @unique // correlaciona el webhook de fal; se reescribe en cada salto de etapa
   deviceFingerprint String? // fingerprint que reclamó la restauración gratis, si aplica — permite revertirla si el job falla
