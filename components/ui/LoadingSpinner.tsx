@@ -1,4 +1,6 @@
-export default function Loading() {
+// Contenido compartido de los loading.tsx por ruta — ver AGENTS.md,
+// sección "CLS: loading.tsx por ruta, no uno global en la raíz".
+export function LoadingSpinner() {
   return (
     <div className="py-20 flex justify-center">
       <svg

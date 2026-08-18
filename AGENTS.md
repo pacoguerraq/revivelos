@@ -125,7 +125,12 @@ app/
   globals.css                     # design system completo (ver arriba)
   layout.tsx                      # fuentes Lora + Inter, Header + Footer, StickyMobileCta, Analytics/SpeedInsights/MetaPixel, metadataBase + title template + OG/Twitter base
   page.tsx                        # landing: Hero → Ejemplos → HowItWorks → Pricing → FAQ → CTA + JsonLd
-  not-found.tsx / error.tsx / global-error.tsx / loading.tsx # convenciones de error/carga — tono cálido, sin stack traces
+  not-found.tsx / error.tsx / global-error.tsx # convenciones de error — tono cálido, sin stack traces
+  # Sin loading.tsx en la raíz a propósito — ver "Rendimiento del landing"
+  # (sección CLS). Cada ruta que hace su propio fetch de datos lento tiene
+  # su loading.tsx local: mis-fotos/, resultado/[jobId]/, procesando/[jobId]/,
+  # comprar/[packageId]/, gracias/, crear/, admin/(protected)/ — todos
+  # reusan components/ui/LoadingSpinner.tsx.
   robots.ts / sitemap.ts / manifest.ts   # convenciones de App Router — excluyen /mis-fotos, /resultado/*, /procesando/*, /api/*
   llms.txt/route.ts               # descripción del sitio para agentes de IA, texto plano
   opengraph-image.tsx / twitter-image.tsx # generan la imagen para compartir (next/og) — ver nota de lib/og-image.tsx
@@ -157,12 +162,14 @@ components/
   JsonLd.tsx                      # Organization + WebSite + FAQPage (derivado de FAQ_ITEMS, sin duplicar)
   MetaPixel.tsx                   # gated en NEXT_PUBLIC_FB_PIXEL_ID — no renderiza nada si falta. Solo PageView + ViewContent; Purchase será CAPI server-side
   legal/LegalPage.tsx             # layout compartido de las 3 páginas legales
-  layout/Header.tsx               # Server Component — lee créditos reales de la DB + sesión
+  layout/Header.tsx               # Server Component síncrono — shell estático (logo) + <Suspense> alrededor de HeaderNavData, fallback del mismo tamaño (ver "Rendimiento del landing")
+  layout/HeaderNavData.tsx        # Server Component async — el fetch de créditos/sesión que antes vivía en Header.tsx, ahora aislado en su propio Suspense
   layout/HeaderNav.tsx            # Client Component — badge de créditos, cuenta/avatar, drawer móvil
   layout/Footer.tsx               # links de navegación + legales
   landing/
     Hero.tsx                      # slider hero-antes/despues.jpg + CTA primario
     Ejemplos.tsx                  # 3 sliders de lib/ejemplos.ts
+    VideoEjemplo.tsx              # video antes/después animado
     HowItWorks.tsx                # pasos numerados
     Pricing.tsx                   # PackageCard × 3, importa lib/pricing.ts
     FAQ.tsx                       # Accordion con preguntas frecuentes — exporta FAQ_ITEMS (fuente única para el JSON-LD)
@@ -177,6 +184,7 @@ components/
     DownloadButton.tsx            # descarga vía fetch+blob con loader — necesario para video (varios MB)
     VideoPlayer.tsx                # 'use client' — <video> sobre /api/image?v=output (con Range), poster = restauración, estado de carga/buffering visible, reintento
     StickyMobileCta.tsx           # CTA fijo en móvil tras pasar el hero, oculto en /crear, /procesando, /resultado
+    LoadingSpinner.tsx             # el spinner que antes vivía solo en app/loading.tsx — reusado por los loading.tsx locales de cada ruta
   icons/
     CameraIcon.tsx  FilmIcon.tsx  PaletteIcon.tsx  LockIcon.tsx  DownloadIcon.tsx
 ```
@@ -205,6 +213,7 @@ components/
 | Borrado a 30 días | **Funcionando** — `app/api/cron/cleanup/route.ts` + `vercel.json` (cron diario 9:00 UTC). Borra blobs de entrada/salida/intermedios y el `Job` de jobs con más de `RETENTION_DAYS` (30, `lib/jobs.ts`, fuente única compartida con `/mis-fotos`); preserva `CreditTransaction` vía `onDelete: SetNull`. Tolerante a fallos parciales: si un blob falla, ese job completo se deja para la corrida siguiente en vez de arriesgar un blob huérfano. Probado en vivo contra la DB y el Blob reales: job con 31 días de antigüedad (3 blobs: input/restored/output) borrado correctamente, `CreditTransaction` asociado sobrevive con `jobId: null`, job reciente intacto, 401 sin auth o con secreto incorrecto, segunda corrida idempotente (0 jobs encontrados) |
 | Dominio canónico | **Decidido: `revivelos.com` (apex, sin `www`)** — `www.revivelos.com` redirige 308 al apex en Vercel, así que apuntar el canonical a `www` generaría un canonical que a su vez redirige. `metadataBase`, `robots.ts`, `sitemap.ts`, `llms.txt`, `JsonLd.tsx` derivan todos de `lib/site.ts` (`SITE_URL`/`SITE_HOST`, con default `https://revivelos.com` si `NEXT_PUBLIC_BASE_URL` no está seteada). `AUTH_URL`/`NEXT_PUBLIC_BASE_URL` de producción deben usar este mismo host — ver checklist de despliegue |
 | Bloqueo de indexación fuera de producción | **Funcionando** — `robots.ts` ahora es dinámico (`headers()`) y compara el `Host` real de la petición contra `revivelos.com`; cualquier otro host (incluido el alias autogenerado `*.vercel.app`, que también reporta `VERCEL_ENV=production` y por eso no basta con solo esa variable) recibe `Disallow: /`. Probado en vivo simulando los 3 hosts con `curl -H "Host: ..."` |
+| Rendimiento del landing (CLS) | **Funcionando** — CLS 0.462→0 (causa raíz: `Header` async sin `Suspense` propio colisionando con `app/loading.tsx` en la raíz, ver sección "Rendimiento del landing"). Medido con Lighthouse local antes/después; **falta remedir con PageSpeed Insights contra `https://revivelos.com` real tras desplegar** — los números locales no son comparables 1:1 con los de producción por la diferencia de red |
 | Imágenes de /public/ejemplos/ | **Agregadas** — `hero-antes/despues.jpg`, `1/2/3-antes/despues.jpg`, `video-animated.mp4` y sus miniaturas ya existen en el repo |
 | Páginas legales (privacidad/términos/reembolsos) | **Funcionando como borrador** — contenido real conforme a LFPDPPP y Profeco, pero marcado explícitamente como no revisado por abogado (comentario al inicio de cada archivo). **No publicitar ni cobrar sin esa revisión.** |
 | Metadatos y compartir (OG/Twitter, robots, sitemap, manifest, JSON-LD) | **Funcionando** — imagen de compartir generada con `next/og` a partir de fotos reales (`lib/og-image.tsx`), título único por página vía `title.template`, `FAQPage` derivado de `FAQ_ITEMS` sin duplicar |
@@ -418,6 +427,46 @@ Una sola restauración gratis por usuario (`freeUsed`), en baja resolución, con
 8. **Mobile-first** — diseñar para 375px primero. Texto base 17px, botones 52px+, alto contraste: el usuario tiene 60 años y está en un celular.
 9. **Single source of truth**: costos y créditos → `lib/pricing.ts`; ejemplos → `lib/ejemplos.ts`; modelos y prompts de IA → `lib/fal.ts` + env; dominio canónico → `lib/site.ts` (`SITE_URL`/`SITE_HOST`). Nunca hardcodear. El dominio canónico es el **apex `revivelos.com`, sin `www`** — `www.revivelos.com` redirige 308 al apex en Vercel. No lo inviertas. Por la misma razón, `POST /api/checkout` construye la sesión de Stripe con `price_data` en línea leído de `PACKAGES` — nunca se crean Productos ni Precios en el dashboard de Stripe. Si el precio viviera en dos lugares (código y dashboard), algún día se van a desincronizar: alguien cambia `lib/pricing.ts` para una promoción y se le olvida el dashboard (o al revés), y el usuario paga un monto distinto al que ve en `/#precios`. Con `price_data` en línea eso es estructuralmente imposible.
 10. **La vista previa gratuita se comunica como vista previa** — y la comparación que la justifique debe ser de fotos reales procesadas con ambos modelos, no una diferencia exagerada. Misma regla que los testimonios.
+
+---
+
+## Rendimiento del landing (CLS, LCP, video)
+
+Ronda de optimización sobre `/` disparada por un PageSpeed Insights real (Moto G Power, 4G lento): Performance 76, LCP 2.6s ✅-ish, **CLS 0.462** ❌ (el peor de los tres Core Web Vitals), payload total 5,440 KB. Medido antes/después con Lighthouse local (`npx lighthouse <url> --only-categories=performance --chrome-flags="--headless"`, mobile + throttling simulado, el mismo método que usa PSI):
+
+| Métrica | Antes (PSI producción) | Después (Lighthouse local, mismo build) |
+|---|---|---|
+| Performance | 76 | 89 |
+| CLS | 0.462 | **0** |
+| TBT | 0 ms | 20 ms |
+| FCP | 0.9s | 0.9s |
+| Payload total | 5,440 KB | 1,350 KB |
+
+LCP no es directamente comparable entre ambas corridas (PSI corre contra el edge de Vercel en producción; Lighthouse local corre contra `npm run start` hablando con la misma Neon/Blob reales pero desde otra red) — hay que remedir LCP contra `https://revivelos.com` después de desplegar estos cambios, pero el payload cayó 75% y el CLS bajó a cero, que era el problema prioritario.
+
+### CLS 0.462 — causa raíz: `Header` async sin `Suspense` propio + `loading.tsx` en la raíz
+
+El salto de layout **no** venía de las imágenes del hero ni de `BeforeAfterSlider` (ya reservaban su espacio con `aspectRatio` inline, ver `components/ui/BeforeAfterSlider.tsx`), ni de `StickyMobileCta` (usa `position: fixed` + `transform`, nunca mueve el flujo del documento), ni de las fuentes (`display: 'swap'` + el ajuste automático de métricas de fallback de `next/font`, ya activo por default, ya daba CLS 0 por su cuenta).
+
+Venía de esto: `components/layout/Header.tsx` era un Server Component `async` que hacía `await getUserId()` + `await auth()` + `await getBalance()` (una consulta real a Neon) **sin ningún `<Suspense>` propio alrededor**. Este proyecto tiene (tenía) un `app/loading.tsx` en la raíz, que Next.js usa para envolver automáticamente `{children}` (o sea, el contenido de `page.tsx`) en un `<Suspense fallback={<Loading/>}>`. Confirmado inspeccionando el HTML crudo servido (`curl` + buscar los marcadores de streaming `<!--$?-->`/`<template id="B:n">` de React): la respuesta inicial traía **el spinner genérico de `loading.tsx` (`py-20 flex justify-center`, ~128px de alto) dentro de `<main>`**, seguido más abajo en el mismo documento por el contenido real de la landing y un script que hace el swap. El navegador pinta primero el spinner, y en cuanto la consulta de créditos de `Header` resuelve, React reemplaza ese `<main>` entero por la landing completa (miles de píxeles de alto) — el salto de layout más grande que mide Lighthouse, y pasaba en **toda ruta**, no solo en `/`, porque `loading.tsx` estaba en la raíz y ninguna página de la landing tiene su propio dato que fetchear (el que sí lo tenía, indirectamente, era `Header`, compartido por todas).
+
+**Fix — dos partes, ambas necesarias** (verificado con el mismo truco de `curl` + marcadores de streaming: el spinner de `loading.tsx` desapareció de `<main>` en `/`, y el único `<Suspense>` que queda es del tamaño del propio badge de navbar):
+
+1. **`components/layout/Header.tsx` volvió a ser síncrono.** El fetch se movió a `components/layout/HeaderNavData.tsx` (Server Component async, misma lógica exacta de antes), envuelto en `<Suspense fallback={<HeaderNavSkeleton/>}>` dentro de `Header.tsx`. El fallback (`HeaderNavSkeleton`, inline en `Header.tsx`) reproduce el alto real de la fila (38px) con dos bloques del color del sistema de diseño (`--color-sepia-100`) — mismo tamaño que el contenido final, así que aunque tarde en resolver, no hay salto. Esto es lo que de verdad importa: al aislar el único dato lento del layout en su propio límite de Suspense, el resto del árbol (que no depende de nada) deja de esperar por él y se envía en el primer render.
+2. **`app/loading.tsx` (raíz) se eliminó.** Sin él, Next ya no envuelve `{children}` de CADA ruta en un Suspense automático — cosa que no hacía falta para páginas sin datos propios (la landing, `/acerca`, `/entrar`, las legales), pero sí quitaba el UX de "aparece un spinner mientras navegas" en páginas que SÍ hacen su propio fetch pesado en `page.tsx` (`mis-fotos`, `resultado/[jobId]`, `procesando/[jobId]`, `comprar/[packageId]`, `gracias`, `crear`, `admin/(protected)/*`). Para esas, se agregó un `loading.tsx` **local** a cada una — mismo contenido, ahora en `components/ui/LoadingSpinner.tsx` para no duplicarlo siete veces. El comportamiento de esas rutas no cambió; el que cambió fue el de todo lo demás, que ya no necesitaba pasar por ahí.
+
+Nota para quien lea la sección de administración: la mención de `app/loading.tsx` en "Panel de administración" sobre por qué toda ruta streamea un 200 antes de un `notFound()` seguía siendo cierta con el `loading.tsx` local de `admin/(protected)/`, así que ese mecanismo (proxy.ts devolviendo 404 directo, capa 1) sigue siendo necesario — no cambió con este fix.
+
+**Video de `VideoEjemplo.tsx` y el `<video>` del hero-equivalente:** su contenedor ya reservaba `aspectRatio: '3/4'`, así que tampoco causaba CLS.
+
+### Video
+
+`public/ejemplos/video-animated.mp4` ya se comprimió a mano por fuera de este repo (~400 KB) antes de esta ronda — no se tocó de nuevo aquí. Si hace falta recomprimir un video de ejemplo en el futuro: `ffmpeg -i entrada.mp4 -an -c:v libx264 -crf 24 -preset slow -movflags +faststart salida.mp4` (sin audio — los videos de Kling ya se generan así; `+faststart` mueve el átomo `moov` al inicio para que el navegador no tenga que descargar el archivo completo antes de reproducir, el mismo hallazgo documentado para `VideoPlayer`/`/api/image/[jobId]`). Paso manual, nunca en el runtime serverless — no agregar `ffmpeg-static`/`fluent-ffmpeg` como dependencia.
+
+### Menor: render-blocking y JavaScript sin usar
+
+- **CSS render-blocking:** Lighthouse marca `_next/static/chunks/*.css` (el único stylesheet del sitio, ~8 KB, `globals.css` compilado) como bloqueante, ~150-160ms estimados en 4G. Es el único stylesheet del sitio — no hay nada que diferir sin inlining de CSS crítico (herramienta nueva, fuera de alcance por la restricción de "sin dependencias nuevas"). Dejado como está: el costo es mínimo (un solo archivo de 8 KB) y ya es render-blocking por diseño (evita FOUC).
+- **27 KB de JS sin usar:** un único chunk compartido del framework de Next/React (`147-*.js`, ~233 KB / 73 KB gzip), no una librería identificable de terceros que se pueda diferir o eliminar. Es código compartido entre rutas — parte de ese 27 KB reportado en `/` pertenece a código que sí se usa en otras páginas del mismo chunk. No se tocó: el riesgo de romper el code-splitting automático de Next para ahorrar <2% del payload total no vale la pena.
 
 ---
 

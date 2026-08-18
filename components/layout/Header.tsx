@@ -1,18 +1,31 @@
+import { Suspense } from 'react'
 import Link from 'next/link'
-import { getUserId } from '@/lib/cookies'
-import { getBalance } from '@/lib/credits'
-import { auth } from '@/lib/auth'
 import { CameraIcon } from '@/components/icons/CameraIcon'
-import { HeaderNav } from './HeaderNav'
+import { HeaderNavData } from './HeaderNavData'
 
-export async function Header() {
-  const [userId, session] = await Promise.all([getUserId(), auth()])
-  const balance = await getBalance(userId)
+// El badge de créditos y la cuenta dependen de una consulta a la DB
+// (getUserId + auth + getBalance, en HeaderNavData). Antes esa consulta
+// vivía directo en este componente, sin límite de Suspense propio — eso
+// bloqueaba TODO el árbol de React que sigue (incluida la página completa,
+// vía el Suspense automático que crea app/loading.tsx alrededor de
+// {children} en el layout raíz), así que cualquier latencia real de Neon
+// hacía que el navegador pintara primero el spinner genérico de
+// loading.tsx y luego, de golpe, la landing completa — el salto de layout
+// (CLS) más grande medido en PageSpeed. Aislar la consulta en su propio
+// Suspense, con un fallback del mismo tamaño que el contenido real,
+// confina cualquier espera visible a esta franja angosta del navbar y deja
+// que el resto de la página (que no depende de ningún dato) se envíe de
+// inmediato en el primer render.
+function HeaderNavSkeleton() {
+  return (
+    <div className="flex items-center gap-1.5 md:gap-3" aria-hidden style={{ height: 38 }}>
+      <div className="rounded-full" style={{ width: 84, height: 30, background: 'var(--color-sepia-100)' }} />
+      <div className="rounded-full" style={{ width: 38, height: 38, background: 'var(--color-sepia-100)' }} />
+    </div>
+  )
+}
 
-  const navUser = session?.user
-    ? { name: session.user.name ?? session.user.email ?? 'Tu cuenta' }
-    : null
-
+export function Header() {
   return (
     <header
       className="sticky top-0 z-40 w-full"
@@ -42,7 +55,9 @@ export async function Header() {
           </span>
         </Link>
 
-        <HeaderNav freeUsed={balance.freeUsed} credits={balance.credits} user={navUser} />
+        <Suspense fallback={<HeaderNavSkeleton />}>
+          <HeaderNavData />
+        </Suspense>
       </div>
     </header>
   )
