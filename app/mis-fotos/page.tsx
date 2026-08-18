@@ -129,7 +129,7 @@ function GalleryCard({ job, createdAt, eager }: { job: Job; createdAt: Date; eag
       className="card overflow-hidden flex flex-col"
       style={{ border: '1px solid var(--color-sepia-100)' }}
     >
-      <div className="relative" style={{ aspectRatio: '1/1' }}>
+      <div className="relative">
         {job.thumbnailUrl && (
           <GalleryThumbnail
             src={job.thumbnailUrl}
@@ -160,7 +160,13 @@ function GalleryCard({ job, createdAt, eager }: { job: Job; createdAt: Date; eag
         )}
       </div>
 
-      <div className="p-3 flex flex-col gap-2 flex-1">
+      {/* La miniatura ya no fuerza un alto fijo (se muestra a su proporción
+          real, sin recortar), así que las tarjetas de una misma fila pueden
+          tener distinta altura de imagen. `marginTop: auto` empuja este
+          bloque al fondo de la tarjeta (que sí se estira a la altura de la
+          fila más alta por el `align-items: stretch` default de CSS Grid),
+          para que el texto y el botón queden alineados entre tarjetas. */}
+      <div className="p-3 flex flex-col gap-2" style={{ marginTop: 'auto' }}>
         <div>
           <p className="text-sm font-semibold" style={{ color: 'var(--color-bark)' }}>
             {isVideo ? 'Video animado' : 'Foto restaurada'}
@@ -182,10 +188,11 @@ function GalleryCard({ job, createdAt, eager }: { job: Job; createdAt: Date; eag
   )
 }
 
-// Mismas dimensiones exactas que GalleryCard: mismo grid, misma
-// `aspectRatio: '1/1'` del área de imagen, mismo alto de texto/botón —
-// para no introducir un salto de layout cuando la cuadrícula real la
-// reemplaza.
+// Mismo grid y mismo alto de texto/botón que GalleryCard, para no introducir
+// un salto de layout cuando la cuadrícula real la reemplaza. El área de
+// imagen usa un placeholder 1/1 solo como relleno visual — las tarjetas
+// reales ya no fuerzan esa proporción (cada miniatura se muestra a su
+// tamaño real, sin recortar), así que no hace falta que coincida exacto.
 function GallerySkeleton() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4" aria-hidden>
@@ -196,7 +203,7 @@ function GallerySkeleton() {
           style={{ border: '1px solid var(--color-sepia-100)' }}
         >
           <div className="relative" style={{ aspectRatio: '1/1', background: 'var(--color-sepia-100)' }} />
-          <div className="p-3 flex flex-col gap-2 flex-1">
+          <div className="p-3 flex flex-col gap-2" style={{ marginTop: 'auto' }}>
             <div className="flex flex-col gap-1.5">
               <div className="rounded" style={{ width: '60%', height: 14, background: 'var(--color-sepia-100)' }} />
               <div className="rounded" style={{ width: '85%', height: 12, background: 'var(--color-sepia-100)' }} />

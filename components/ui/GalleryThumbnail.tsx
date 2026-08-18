@@ -14,11 +14,19 @@ interface GalleryThumbnailProps {
 // (spinner discreto → fade-in), sin bloquear a las demás ni a la cuadrícula.
 // Sin porcentaje de progreso — no hay forma confiable de medirlo para una
 // sola imagen, y un porcentaje atorado se siente peor que un spinner.
+//
+// Sin alto fijo ni object-fit: cover a propósito: la miniatura se muestra a
+// su proporción real (vertical, cuadrada o panorámica), sin recortarla. Un
+// alto mínimo solo mientras carga o falla evita que la celda colapse a 0px
+// antes de conocer el tamaño real de la imagen.
 export function GalleryThumbnail({ src, alt, eager = false }: GalleryThumbnailProps) {
   const [state, setState] = useState<'loading' | 'loaded' | 'error'>('loading')
 
   return (
-    <div className="relative w-full h-full" style={{ background: 'var(--color-sepia-100)' }}>
+    <div
+      className="relative w-full"
+      style={{ background: 'var(--color-sepia-100)', minHeight: state === 'loaded' ? undefined : 140 }}
+    >
       {state !== 'error' && (
         // eslint-disable-next-line @next/next/no-img-element -- imagen dinámica servida por proxy autenticado
         <img
@@ -26,9 +34,9 @@ export function GalleryThumbnail({ src, alt, eager = false }: GalleryThumbnailPr
           alt={alt}
           loading={eager ? 'eager' : 'lazy'}
           decoding="async"
-          className="w-full h-full"
+          className="w-full block"
           style={{
-            objectFit: 'cover',
+            height: 'auto',
             opacity: state === 'loaded' ? 1 : 0,
             transition: 'opacity 300ms ease',
           }}
