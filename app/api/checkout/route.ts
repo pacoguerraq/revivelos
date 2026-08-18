@@ -3,11 +3,12 @@ import { auth } from '@/lib/auth'
 import { stripe } from '@/lib/stripe'
 import { PACKAGES } from '@/lib/pricing'
 import { checkRateLimit, RateLimitError } from '@/lib/rate-limit'
+import { SITE_URL } from '@/lib/site'
 
 const HOUR_MS = 60 * 60 * 1000
 
 function baseUrl(request: NextRequest): string {
-  return process.env.NEXT_PUBLIC_BASE_URL ?? new URL(request.url).origin
+  return process.env.NEXT_PUBLIC_BASE_URL ? SITE_URL : new URL(request.url).origin
 }
 
 export async function POST(request: NextRequest) {

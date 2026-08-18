@@ -5,6 +5,7 @@
  * revisión legal antes de usarse en producción o de empezar a cobrar.
  */
 import { LegalPage, LegalList } from '@/components/legal/LegalPage'
+import { SITE_HOST } from '@/lib/site'
 
 const description =
   'Cómo Revívelos recaba, usa y protege tus datos personales y tus fotografías, incluido el uso de proveedores de inteligencia artificial de terceros.'
@@ -27,7 +28,7 @@ export default function PrivacidadPage() {
           heading: '1. Quién es responsable de tus datos',
           body: (
             <p>
-              Revívelos (operado bajo el dominio www.revivelos.com) es responsable del tratamiento de tus datos
+              Revívelos (operado bajo el dominio {SITE_HOST}) es responsable del tratamiento de tus datos
               personales conforme a la Ley Federal de Protección de Datos Personales en Posesión de los
               Particulares (LFPDPPP). Puedes contactarnos en cualquier momento a{' '}
               <a href="mailto:franciscoguerraquintanilla@gmail.com" style={{ color: 'var(--color-amber-dark)', fontWeight: 600 }}>

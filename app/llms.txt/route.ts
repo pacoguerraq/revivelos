@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-
-const BASE_URL = 'https://www.revivelos.com'
+import { SITE_URL as BASE_URL } from '@/lib/site'
 
 const CONTENT = `# Revívelos
 

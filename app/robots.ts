@@ -1,8 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { headers } from 'next/headers'
-
-const BASE_URL = 'https://www.revivelos.com'
-const PRODUCTION_HOST = 'www.revivelos.com'
+import { SITE_URL, SITE_HOST } from '@/lib/site'
 
 // VERCEL_ENV === 'production' NO alcanza por sí solo: el dominio
 // *.vercel.app autogenerado del proyecto (ej. revivelos-two.vercel.app)
@@ -14,7 +12,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
   const headersList = await headers()
   const host = headersList.get('host')
 
-  if (host !== PRODUCTION_HOST) {
+  if (host !== SITE_HOST) {
     return { rules: { userAgent: '*', disallow: '/' } }
   }
 
@@ -24,6 +22,6 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       allow: '/',
       disallow: ['/mis-fotos', '/resultado/', '/procesando/', '/comprar/', '/gracias', '/api/', '/admin'],
     },
-    sitemap: `${BASE_URL}/sitemap.xml`,
+    sitemap: `${SITE_URL}/sitemap.xml`,
   }
 }

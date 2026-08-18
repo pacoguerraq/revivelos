@@ -1,6 +1,5 @@
 import type { MetadataRoute } from 'next'
-
-const BASE_URL = 'https://www.revivelos.com'
+import { SITE_URL as BASE_URL } from '@/lib/site'
 
 // Solo rutas públicas e indexables. /mis-fotos, /resultado/*, /procesando/*
 // y /api/* se excluyen aquí y en robots.ts — son páginas privadas o

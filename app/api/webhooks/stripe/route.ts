@@ -4,6 +4,7 @@ import { stripe } from '@/lib/stripe'
 import { addCreditsFromPurchase } from '@/lib/credits'
 import { PACKAGES } from '@/lib/pricing'
 import { sendPurchaseCapiEvent } from '@/lib/meta-capi'
+import { SITE_URL } from '@/lib/site'
 
 function requireEnv(name: string): string {
   const value = process.env[name]
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
       eventId: checkoutSession.id,
       email: buyerEmail,
       valueMxn: (checkoutSession.amount_total ?? 0) / 100,
-      eventSourceUrl: process.env.NEXT_PUBLIC_BASE_URL ?? 'https://www.revivelos.com',
+      eventSourceUrl: SITE_URL,
     })
   }
 

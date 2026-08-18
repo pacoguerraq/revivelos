@@ -6,6 +6,7 @@ import { Header } from '@/components/layout/Header'
 import { Footer } from '@/components/layout/Footer'
 import { StickyMobileCta } from '@/components/ui/StickyMobileCta'
 import { MetaPixel } from '@/components/MetaPixel'
+import { SITE_URL } from '@/lib/site'
 import './globals.css'
 
 const lora = Lora({
@@ -26,10 +27,10 @@ const SITE_DESCRIPTION =
   'Dale nueva vida a las fotos viejas de tu familia. Restauramos, coloreamos y animamos tus recuerdos con inteligencia artificial. La primera foto es gratis.'
 
 export const metadata: Metadata = {
-  // www es la forma canónica: revivelos.com (apex) ya redirige 308 a
-  // www.revivelos.com en Vercel — apuntar aquí al apex generaría
-  // canonicals que a su vez redirigen, lo cual Google penaliza.
-  metadataBase: new URL('https://www.revivelos.com'),
+  // El apex es la forma canónica: www.revivelos.com redirige 308 al
+  // apex en Vercel — apuntar aquí a www generaría canonicals que a su
+  // vez redirigen, lo cual Google penaliza.
+  metadataBase: new URL(SITE_URL),
   title: {
     default: 'Revívelos — Restaura las fotos de tu familia',
     template: '%s — Revívelos',

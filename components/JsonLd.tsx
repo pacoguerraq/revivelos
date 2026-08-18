@@ -1,6 +1,5 @@
 import { FAQ_ITEMS } from '@/components/landing/FAQ'
-
-const BASE_URL = 'https://www.revivelos.com'
+import { SITE_URL as BASE_URL } from '@/lib/site'
 
 // JSON-LD de la home: Organization + WebSite, y FAQPage derivado del mismo
 // arreglo que renderiza el acordeón visible — nunca se duplica el
