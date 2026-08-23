@@ -35,6 +35,14 @@ export function GraciasClient({ sessionId }: { sessionId: string }) {
             setCreditsAdded(data.creditsAdded)
             setBalance(data.balance)
             setStatus('confirmed')
+            // Punto del funnel: pago confirmado. El evento Purchase real ya
+            // se dispara server-side por CAPI desde el webhook de Stripe
+            // (lib/meta-capi.ts) en cuanto se acredita el crédito — es la
+            // fuente de verdad, no depende de que esta pestaña siga abierta.
+            // Si algún día se quiere complementar con trackPurchase() de
+            // lib/meta-pixel.ts aquí, su eventId debe coincidir con el que
+            // usa sendPurchaseCapiEvent para el mismo pago, o Meta lo va a
+            // contar dos veces.
             // El saldo del Header (Server Component) necesita un refresh
             // para mostrar el crédito nuevo — mismo patrón que ProgressStages.
             router.refresh()

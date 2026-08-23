@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { usePathname } from 'next/navigation'
+import { Suspense, useEffect, useRef } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
 import Script from 'next/script'
 
 declare global {
@@ -10,24 +10,39 @@ declare global {
   }
 }
 
+// Mismo NEXT_PUBLIC_FB_PIXEL_ID que usa lib/meta-capi.ts para el Purchase
+// server-side — un solo pixel ID en todo el proyecto (regla de single
+// source of truth de AGENTS.md), nunca dos variables distintas para la
+// misma cosa.
 const PIXEL_ID = process.env.NEXT_PUBLIC_FB_PIXEL_ID
 
-// Solo PageView y ViewContent por ahora — el evento Purchase se dispara por
-// CAPI server-side cuando se integre el pago (ver AGENTS.md, Fase 3), no
-// desde el navegador.
-export function MetaPixel() {
+// App Router no hace un reload de página en navegación client-side, así
+// que fbq('track', 'PageView') del script inline solo cubre la primera
+// carga. Este componente vuelve a dispararlo en cada cambio de ruta.
+//
+// useSearchParams() opta la página que lo usa fuera del render estático a
+// menos que esté envuelto en su propio <Suspense> (requisito de Next.js
+// App Router) — por eso vive separado del <Script>/<noscript>, que sí
+// pueden ir directo en el árbol sin ese costo.
+function PageviewTracker() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const isFirstLoad = useRef(true)
 
   useEffect(() => {
-    if (!PIXEL_ID || !window.fbq) return
+    if (!PIXEL_ID) return
     if (isFirstLoad.current) {
       isFirstLoad.current = false
-      return // el primer PageView + ViewContent ya los dispara el script inline al cargar
+      return // el primer PageView ya lo dispara el script inline al cargar — no duplicar
     }
+    if (!window.fbq) return
     window.fbq('track', 'PageView')
-  }, [pathname])
+  }, [pathname, searchParams])
 
+  return null
+}
+
+export function MetaPixel() {
   if (!PIXEL_ID) return null
 
   return (
@@ -44,9 +59,11 @@ export function MetaPixel() {
           'https://connect.facebook.net/en_US/fbevents.js');
           fbq('init', '${PIXEL_ID}');
           fbq('track', 'PageView');
-          fbq('track', 'ViewContent');
         `}
       </Script>
+      <Suspense fallback={null}>
+        <PageviewTracker />
+      </Suspense>
       <noscript>
         {/* eslint-disable-next-line @next/next/no-img-element -- pixel de seguimiento externo, no una imagen del sitio */}
         <img

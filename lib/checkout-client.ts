@@ -1,8 +1,4 @@
-declare global {
-  interface Window {
-    fbq?: (...args: unknown[]) => void
-  }
-}
+import { trackInitiateCheckout } from '@/lib/meta-pixel'
 
 export interface CheckoutOutcome {
   ok: boolean
@@ -15,9 +11,8 @@ export interface CheckoutOutcome {
 // compra) — un solo lugar que llama a /api/checkout y decide qué hacer con
 // cada resultado posible.
 export async function startCheckout(packageId: string): Promise<CheckoutOutcome> {
-  if (typeof window !== 'undefined' && window.fbq) {
-    window.fbq('track', 'InitiateCheckout')
-  }
+  // Punto del funnel: inicio de checkout. Ver lib/meta-pixel.ts.
+  trackInitiateCheckout()
 
   let res: Response
   try {

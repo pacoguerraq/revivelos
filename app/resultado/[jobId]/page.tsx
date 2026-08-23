@@ -42,6 +42,11 @@ export default async function ResultadoPage({ params }: Props) {
     return <StillProcessingView jobId={jobId} />
   }
 
+  // Punto del funnel: el usuario ve su resultado restaurado/animado.
+  // Este es un Server Component, así que trackViewContent() (lib/meta-pixel.ts)
+  // no puede llamarse aquí directamente — dispararlo desde un client
+  // component montado en esta vista (ej. un useEffect en ShareButton o un
+  // wrapper dedicado), no desde este archivo.
   return (
     <div className="py-12 sm:py-20">
       <div className="section-wrap" style={{ maxWidth: 680, margin: '0 auto' }}>
