@@ -6,6 +6,7 @@ import { BeforeAfterSlider } from '@/components/ui/BeforeAfterSlider'
 import { ShareButton } from '@/components/ui/ShareButton'
 import { DownloadButton } from '@/components/ui/DownloadButton'
 import { VideoPlayer } from '@/components/ui/VideoPlayer'
+import { ViewContentTracker } from '@/components/ui/ViewContentTracker'
 
 const description = 'El resultado de tu restauración o animación con Revívelos.'
 
@@ -42,13 +43,12 @@ export default async function ResultadoPage({ params }: Props) {
     return <StillProcessingView jobId={jobId} />
   }
 
-  // Punto del funnel: el usuario ve su resultado restaurado/animado.
-  // Este es un Server Component, así que trackViewContent() (lib/meta-pixel.ts)
-  // no puede llamarse aquí directamente — dispararlo desde un client
-  // component montado en esta vista (ej. un useEffect en ShareButton o un
-  // wrapper dedicado), no desde este archivo.
+  // Punto del funnel: el usuario ve su resultado restaurado/animado. Este
+  // es un Server Component, así que el ViewContent se dispara desde
+  // ViewContentTracker (client component sin marcado, solo un useEffect).
   return (
     <div className="py-12 sm:py-20">
+      <ViewContentTracker />
       <div className="section-wrap" style={{ maxWidth: 680, margin: '0 auto' }}>
         {/* Encabezado de éxito */}
         <div className="text-center mb-10">

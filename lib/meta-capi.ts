@@ -2,6 +2,14 @@ import { createHash } from 'crypto'
 
 const PIXEL_ID = process.env.NEXT_PUBLIC_FB_PIXEL_ID
 const CAPI_TOKEN = process.env.META_CAPI_TOKEN
+// Opcional, solo para desarrollo: código de la pestaña "Eventos de prueba"
+// de Events Manager (rota cada vez que se abre esa pestaña). Sin esto, un
+// evento de CAPI es real y se procesa normal, pero NUNCA aparece en Eventos
+// de prueba — solo en el resumen normal de Eventos/Diagnóstico, con
+// retraso de minutos a horas. No dejar definida en producción: un
+// test_event_code marca el evento como prueba y Meta lo excluye de la
+// optimización de campañas.
+const TEST_EVENT_CODE = process.env.META_CAPI_TEST_EVENT_CODE
 const GRAPH_URL = 'https://graph.facebook.com/v21.0'
 
 function sha256(value: string): string {
@@ -45,6 +53,7 @@ export async function sendPurchaseCapiEvent(params: {
             },
           },
         ],
+        ...(TEST_EVENT_CODE ? { test_event_code: TEST_EVENT_CODE } : {}),
       }),
     })
     if (!res.ok) {
