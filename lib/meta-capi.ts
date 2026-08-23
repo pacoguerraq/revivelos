@@ -27,6 +27,16 @@ function sha256(value: string): string {
 // CPA nunca baja — ver AGENTS.md. `eventId` debe coincidir con el que se
 // use en un futuro evento de navegador equivalente, para que Meta lo
 // deduplique en vez de contar la misma compra dos veces.
+// Resultado siempre devuelto (nunca lanza) para que un caller que lo
+// necesite (ej. el endpoint de debug) pueda inspeccionar exactamente qué
+// contestó Meta, sin depender solo de los logs.
+export interface CapiSendResult {
+  ok: boolean
+  status?: number
+  body?: unknown
+  error?: string
+}
+
 export async function sendPurchaseCapiEvent(params: {
   eventId: string
   email: string
@@ -37,10 +47,10 @@ export async function sendPurchaseCapiEvent(params: {
   clientUserAgent?: string
   fbp?: string
   fbc?: string
-}): Promise<void> {
+}): Promise<CapiSendResult> {
   if (!PIXEL_ID || !CAPI_TOKEN) {
     console.log('Meta CAPI no configurado (falta NEXT_PUBLIC_FB_PIXEL_ID o META_CAPI_TOKEN) — se omite Purchase')
-    return
+    return { ok: false, error: 'NOT_CONFIGURED' }
   }
 
   try {
@@ -72,12 +82,32 @@ export async function sendPurchaseCapiEvent(params: {
         ...(TEST_EVENT_CODE ? { test_event_code: TEST_EVENT_CODE } : {}),
       }),
     })
-    if (!res.ok) {
-      console.error('Meta CAPI Purchase respondió con error', res.status, await res.text())
+
+    // .text() primero, no .json(): un error 4xx de Graph API a veces
+    // devuelve un cuerpo no-JSON (o vacío) y .json() lanzaría, tapando el
+    // status real detrás de un error de parseo distinto.
+    const rawBody = await res.text()
+    let body: unknown = rawBody
+    try {
+      body = JSON.parse(rawBody)
+    } catch {
+      // Cuerpo no era JSON — se deja el texto crudo, no es un error en sí.
     }
+
+    if (res.ok) {
+      // Log incondicional (no gateado por NODE_ENV) — tiene que aparecer
+      // también en los logs de producción de Vercel, no solo en dev.
+      console.log('Meta CAPI: evento enviado', { status: res.status, body })
+      return { ok: true, status: res.status, body }
+    }
+
+    console.error('Meta CAPI: FALLÓ el envío', { status: res.status, body })
+    return { ok: false, status: res.status, body }
   } catch (error) {
     // Best-effort: un fallo aquí nunca debe afectar la acreditación de
     // créditos, que ya se confirmó antes de llamar a esta función.
-    console.error('No se pudo enviar el evento Purchase a Meta CAPI', error)
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('Meta CAPI: FALLÓ el envío', { error: message })
+    return { ok: false, error: message }
   }
 }
