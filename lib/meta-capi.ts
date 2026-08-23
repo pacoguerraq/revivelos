@@ -16,6 +16,12 @@ function sha256(value: string): string {
   return createHash('sha256').update(value.trim().toLowerCase()).digest('hex')
 }
 
+// Si en el futuro se captura teléfono para `ph` (Advanced Matching): antes
+// de pasarlo a sha256() de arriba, quitar todo lo que no sea dígito
+// (value.replace(/\D/g, '')) — Meta exige dígitos puros, con código de
+// país, sin '+', espacios, guiones o paréntesis. No capturamos teléfono en
+// el flujo de checkout hoy.
+
 // Dispara el evento Purchase server-side vía Conversions API. Sin esto el
 // algoritmo de Meta optimiza a ciegas (solo ve tráfico, nunca compras) y el
 // CPA nunca baja — ver AGENTS.md. `eventId` debe coincidir con el que se
@@ -26,6 +32,11 @@ export async function sendPurchaseCapiEvent(params: {
   email: string
   valueMxn: number
   eventSourceUrl: string
+  userId: string
+  clientIp?: string
+  clientUserAgent?: string
+  fbp?: string
+  fbc?: string
 }): Promise<void> {
   if (!PIXEL_ID || !CAPI_TOKEN) {
     console.log('Meta CAPI no configurado (falta NEXT_PUBLIC_FB_PIXEL_ID o META_CAPI_TOKEN) — se omite Purchase')
@@ -46,6 +57,11 @@ export async function sendPurchaseCapiEvent(params: {
             action_source: 'website',
             user_data: {
               em: [sha256(params.email)],
+              external_id: [sha256(params.userId)],
+              ...(params.clientIp ? { client_ip_address: params.clientIp } : {}),
+              ...(params.clientUserAgent ? { client_user_agent: params.clientUserAgent } : {}),
+              ...(params.fbp ? { fbp: params.fbp } : {}),
+              ...(params.fbc ? { fbc: params.fbc } : {}),
             },
             custom_data: {
               currency: 'MXN',

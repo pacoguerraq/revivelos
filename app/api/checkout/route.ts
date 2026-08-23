@@ -55,6 +55,15 @@ export async function POST(request: NextRequest) {
 
   const origin = baseUrl(request)
 
+  // Advanced Matching de Meta CAPI: estos cuatro solo existen en la request
+  // real del navegador — el webhook de Stripe (app/api/webhooks/stripe/route.ts)
+  // llega desde los servidores de Stripe, sin IP/UA/cookies del comprador.
+  // Se congelan aquí y viajan en metadata para recuperarlos en el webhook.
+  const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? ''
+  const clientUserAgent = request.headers.get('user-agent') ?? ''
+  const fbp = request.cookies.get('_fbp')?.value ?? ''
+  const fbc = request.cookies.get('_fbc')?.value ?? ''
+
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
@@ -81,6 +90,10 @@ export async function POST(request: NextRequest) {
       userId,
       packageId: pkg.id,
       credits: String(pkg.credits),
+      clientIp,
+      clientUserAgent,
+      fbp,
+      fbc,
     },
   })
 

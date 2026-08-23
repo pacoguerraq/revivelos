@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  const { userId, packageId, credits } = checkoutSession.metadata ?? {}
+  const { userId, packageId, credits, clientIp, clientUserAgent, fbp, fbc } = checkoutSession.metadata ?? {}
   const creditsAmount = Number(credits)
 
   // Congelado en metadata al crear el checkout — así si lib/pricing.ts
@@ -84,6 +84,11 @@ export async function POST(request: NextRequest) {
       email: buyerEmail,
       valueMxn: (checkoutSession.amount_total ?? 0) / 100,
       eventSourceUrl: SITE_URL,
+      userId,
+      clientIp: clientIp || undefined,
+      clientUserAgent: clientUserAgent || undefined,
+      fbp: fbp || undefined,
+      fbc: fbc || undefined,
     })
   }
 
