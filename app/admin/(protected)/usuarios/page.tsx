@@ -22,7 +22,14 @@ export default async function AdminUsersPage({ searchParams }: Props) {
   const query = (q ?? '').trim()
   const page = Math.max(1, Number(pageParam) || 1)
 
-  const where = query ? { email: { contains: query, mode: 'insensitive' as const } } : {}
+  // Los usuarios anónimos (cookie uid sin cuenta real — dispositivos que
+  // usaron el free tier o ni eso) no son "usuarios" en el sentido que le
+  // importa a este panel: no tienen correo, no pueden comprar, y su fila
+  // aquí solo era ruido ("(sin correo / anónimo)"). Se excluyen siempre.
+  const where = {
+    isAnonymous: false,
+    ...(query ? { email: { contains: query, mode: 'insensitive' as const } } : {}),
+  }
 
   const [users, total] = await Promise.all([
     prisma.user.findMany({
@@ -35,7 +42,6 @@ export default async function AdminUsersPage({ searchParams }: Props) {
         email: true,
         credits: true,
         freeUsed: true,
-        isAnonymous: true,
         createdAt: true,
         _count: { select: { jobs: true } },
       },
@@ -75,19 +81,17 @@ export default async function AdminUsersPage({ searchParams }: Props) {
                 <th style={s.th}>Free usado</th>
                 <th style={s.th}>Jobs</th>
                 <th style={s.th}>Registro</th>
-                <th style={s.th}>Estado</th>
                 <th style={s.th}></th>
               </tr>
             </thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
-                  <td style={s.td}>{u.email ?? '(sin correo / anónimo)'}</td>
+                  <td style={s.td}>{u.email ?? '(sin correo)'}</td>
                   <td style={s.td}>{u.credits}</td>
                   <td style={s.td}>{u.freeUsed ? 'sí' : 'no'}</td>
                   <td style={s.td}>{u._count.jobs}</td>
                   <td style={s.td}>{u.createdAt.toLocaleDateString('es-MX')}</td>
-                  <td style={s.td}>{u.isAnonymous ? 'anónimo' : 'autenticado'}</td>
                   <td style={s.td}>
                     <Link href={`/admin/usuarios/${u.id}`} style={{ color: '#8A5208' }}>
                       Ver detalle
@@ -97,7 +101,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td style={s.td} colSpan={7}>
+                  <td style={s.td} colSpan={6}>
                     Sin resultados.
                   </td>
                 </tr>

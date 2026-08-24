@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ConfirmModal } from '@/components/admin/ConfirmModal'
 
 export function AdjustCreditsForm({ userId }: { userId: string }) {
   const router = useRouter()
@@ -9,8 +10,9 @@ export function AdjustCreditsForm({ userId }: { userId: string }) {
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
@@ -24,11 +26,12 @@ export function AdjustCreditsForm({ userId }: { userId: string }) {
       return
     }
 
-    const verb = parsed > 0 ? 'sumar' : 'restar'
-    const confirmed = window.confirm(
-      `¿Confirmas ${verb} ${Math.abs(parsed)} crédito(s) a este usuario?\n\nMotivo: ${note.trim()}`,
-    )
-    if (!confirmed) return
+    setConfirmOpen(true)
+  }
+
+  async function applyAdjustment() {
+    setConfirmOpen(false)
+    const parsed = Number(delta)
 
     setSubmitting(true)
     try {
@@ -50,36 +53,50 @@ export function AdjustCreditsForm({ userId }: { userId: string }) {
     }
   }
 
+  const parsedForModal = Number(delta)
+  const verb = parsedForModal > 0 ? 'sumar' : 'restar'
+
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
-      {error && <div style={{ color: '#B84040', fontSize: '0.85rem' }}>{error}</div>}
-      <label style={{ fontSize: '0.8rem' }}>
-        Ajuste (positivo suma, negativo resta)
-        <input
-          type="number"
-          value={delta}
-          onChange={(e) => setDelta(e.target.value)}
-          style={{ display: 'block', width: '100%', padding: '6px 8px', border: '1px solid #D9C4A8', borderRadius: 6, marginTop: 4 }}
-        />
-      </label>
-      <label style={{ fontSize: '0.8rem' }}>
-        Motivo (obligatorio)
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Ej. compensación por bug reportado por correo"
-          style={{ display: 'block', width: '100%', padding: '6px 8px', border: '1px solid #D9C4A8', borderRadius: 6, marginTop: 4 }}
-        />
-      </label>
-      <button
-        type="submit"
-        disabled={submitting}
-        className="btn btn-primary"
-        style={{ minHeight: 38, alignSelf: 'flex-start', padding: '0 20px' }}
-      >
-        {submitting ? 'Aplicando…' : 'Aplicar ajuste'}
-      </button>
-    </form>
+    <>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 360 }}>
+        {error && <div style={{ color: '#B84040', fontSize: '0.85rem' }}>{error}</div>}
+        <label style={{ fontSize: '0.8rem' }}>
+          Ajuste (positivo suma, negativo resta)
+          <input
+            type="number"
+            value={delta}
+            onChange={(e) => setDelta(e.target.value)}
+            style={{ display: 'block', width: '100%', padding: '6px 8px', border: '1px solid #D9C4A8', borderRadius: 6, marginTop: 4 }}
+          />
+        </label>
+        <label style={{ fontSize: '0.8rem' }}>
+          Motivo (obligatorio)
+          <input
+            type="text"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ej. compensación por bug reportado por correo"
+            style={{ display: 'block', width: '100%', padding: '6px 8px', border: '1px solid #D9C4A8', borderRadius: 6, marginTop: 4 }}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="btn btn-primary"
+          style={{ minHeight: 38, alignSelf: 'flex-start', padding: '0 20px' }}
+        >
+          {submitting ? 'Aplicando…' : 'Aplicar ajuste'}
+        </button>
+      </form>
+
+      <ConfirmModal
+        open={confirmOpen}
+        title="Confirmar ajuste de créditos"
+        message={`¿Confirmas ${verb} ${Math.abs(parsedForModal)} crédito(s) a este usuario?\n\nMotivo: ${note.trim()}`}
+        confirmLabel="Aplicar ajuste"
+        onConfirm={applyAdjustment}
+        onCancel={() => setConfirmOpen(false)}
+      />
+    </>
   )
 }
