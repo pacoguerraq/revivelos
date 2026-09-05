@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server'
 // una sola persona (el dueño del negocio), no un usuario del producto. Ver
 // AGENTS.md, sección "Panel de administración".
 const COOKIE_NAME = 'admin_session'
-const SESSION_DURATION_MS = 8 * 60 * 60 * 1000 // 8 horas
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000 // 30 días — panel de una sola persona, cookie httpOnly firmada
 
 export function isAdminConfigured(): boolean {
   return Boolean(process.env.ADMIN_PASSWORD)

@@ -51,6 +51,14 @@ async function isValidAdminSession(cookieValue: string | undefined, secret: stri
 // que ya tenía este mismo comportamiento antes del panel de admin). Un
 // 404 de verdad, sin renderizar nada de React, solo se puede garantizar
 // aquí, antes de que empiece el streaming.
+//
+// Distinción importante: si el panel NO está configurado (`ADMIN_PASSWORD`
+// ausente) se responde 404 — no se anuncia que /admin existe a quien no
+// tiene la contraseña. Pero si el panel SÍ está configurado y lo único que
+// falta es una sesión válida (cookie ausente o expirada), un 404 hace que
+// la sesión expirada se vea como "la página no existe" en vez de "hay que
+// volver a entrar" — confuso para el único usuario real del panel. En ese
+// caso se redirige a /admin (la página de login), que ya es pública.
 async function guardAdmin(request: NextRequest): Promise<NextResponse | null> {
   if (!request.nextUrl.pathname.startsWith('/admin')) return null
 
@@ -62,7 +70,7 @@ async function guardAdmin(request: NextRequest): Promise<NextResponse | null> {
   if (request.nextUrl.pathname === '/admin') return null
 
   const valid = await isValidAdminSession(request.cookies.get(ADMIN_SESSION_COOKIE)?.value, secret)
-  if (!valid) return new NextResponse(null, { status: 404 })
+  if (!valid) return NextResponse.redirect(new URL('/admin', request.url))
 
   return null
 }
