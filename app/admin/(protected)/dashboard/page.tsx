@@ -9,6 +9,7 @@ import {
 import { verifyAdminSession } from '@/lib/admin-auth'
 import * as s from '@/components/admin/styles'
 import type { DaySummary } from '@/lib/admin-metrics'
+import { formatAdminDateTime, formatAdminTime, weekdayAbbrevForDateString } from '@/lib/timezone'
 
 export const metadata = { robots: { index: false, follow: false } }
 
@@ -138,7 +139,7 @@ export default async function AdminDashboardPage() {
               <tbody>
                 {failedToday.map((j) => (
                   <tr key={j.id}>
-                    <td style={s.td}>{j.createdAt.toLocaleTimeString('es-MX')}</td>
+                    <td style={s.td}>{formatAdminTime(j.createdAt)}</td>
                     <td style={s.td}>{j.type}</td>
                     <td style={s.td}>{j.error ?? '—'}</td>
                   </tr>
@@ -180,7 +181,9 @@ export default async function AdminDashboardPage() {
             <tbody>
               {[...series].reverse().map((p) => (
                 <tr key={p.date}>
-                  <td style={s.td}>{p.date}</td>
+                  <td style={s.td}>
+                    {weekdayAbbrevForDateString(p.date)} {p.date}
+                  </td>
                   <td style={s.td}>{p.freeUsed}</td>
                   <td style={s.td}>{p.paidJobs}</td>
                   <td style={s.td}>{p.purchases}</td>
@@ -207,7 +210,7 @@ export default async function AdminDashboardPage() {
             <tbody>
               {purchases.map((p) => (
                 <tr key={p.id}>
-                  <td style={s.td}>{p.createdAt.toLocaleString('es-MX')}</td>
+                  <td style={s.td}>{formatAdminDateTime(p.createdAt)}</td>
                   <td style={s.td}>{p.userEmail ?? '(sin correo)'}</td>
                   <td style={s.td}>{p.packageName}</td>
                   <td style={s.td}>{mxn(p.amountMxn)}</td>

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAdminSession } from '@/lib/admin-auth'
 import * as s from '@/components/admin/styles'
 import { AdjustCreditsForm } from '@/components/admin/AdjustCreditsForm'
+import { formatAdminDate, formatAdminDateTime } from '@/lib/timezone'
 
 export const metadata = { robots: { index: false, follow: false } }
 
@@ -59,7 +60,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
             <div style={s.statLabel}>Estado de cuenta</div>
           </div>
           <div>
-            <div style={s.statValue}>{user.createdAt.toLocaleDateString('es-MX')}</div>
+            <div style={s.statValue}>{formatAdminDate(user.createdAt)}</div>
             <div style={s.statLabel}>Registro</div>
           </div>
         </div>
@@ -87,7 +88,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
             <tbody>
               {transactions.map((t) => (
                 <tr key={t.id}>
-                  <td style={s.td}>{t.createdAt.toLocaleString('es-MX')}</td>
+                  <td style={s.td}>{formatAdminDateTime(t.createdAt)}</td>
                   <td style={s.td}>{t.delta > 0 ? `+${t.delta}` : t.delta}</td>
                   <td style={s.td}>{t.reason}</td>
                   <td style={s.td}>{t.note ?? '—'}</td>
@@ -123,7 +124,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
             <tbody>
               {jobs.map((j) => (
                 <tr key={j.id}>
-                  <td style={s.td}>{j.createdAt.toLocaleString('es-MX')}</td>
+                  <td style={s.td}>{formatAdminDateTime(j.createdAt)}</td>
                   <td style={s.td}>{j.type}</td>
                   <td style={s.td}>{j.tier}</td>
                   <td style={s.td}>{j.status}</td>

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { verifyAdminSession } from '@/lib/admin-auth'
 import * as s from '@/components/admin/styles'
+import { formatAdminDate } from '@/lib/timezone'
 
 export const metadata = { robots: { index: false, follow: false } }
 
@@ -91,7 +92,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
                   <td style={s.td}>{u.credits}</td>
                   <td style={s.td}>{u.freeUsed ? 'sí' : 'no'}</td>
                   <td style={s.td}>{u._count.jobs}</td>
-                  <td style={s.td}>{u.createdAt.toLocaleDateString('es-MX')}</td>
+                  <td style={s.td}>{formatAdminDate(u.createdAt)}</td>
                   <td style={s.td}>
                     <Link href={`/admin/usuarios/${u.id}`} style={{ color: '#8A5208' }}>
                       Ver detalle

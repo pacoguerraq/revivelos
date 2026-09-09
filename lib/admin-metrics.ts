@@ -1,6 +1,7 @@
 import { prisma } from './db'
 import { PACKAGES, API_COST_MXN } from './pricing'
-import { FREE_TIER_DAILY_CAP, FREE_TIER_ENABLED, startOfTodayUTC } from './jobs'
+import { FREE_TIER_DAILY_CAP, FREE_TIER_ENABLED } from './jobs'
+import { ADMIN_TIMEZONE, startOfDayInTimeZone } from './timezone'
 
 export { FREE_TIER_DAILY_CAP, FREE_TIER_ENABLED }
 
@@ -51,7 +52,7 @@ export interface TodayYesterday {
 }
 
 export async function getTodayYesterdaySummary(): Promise<TodayYesterday> {
-  const startOfToday = startOfTodayUTC()
+  const startOfToday = startOfDayInTimeZone(new Date(), ADMIN_TIMEZONE)
   const startOfYesterday = new Date(startOfToday.getTime() - 24 * 60 * 60 * 1000)
   const startOfTomorrow = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000)
 
@@ -80,28 +81,51 @@ export interface DaySeriesPoint {
 // Dos queries agregadas (no 30 × N) — group by día con SQL crudo, porque
 // Prisma no expresa `date_trunc` + group-by en su API tipada.
 export async function getDailySeries(days = 30): Promise<DaySeriesPoint[]> {
-  const startOfToday = startOfTodayUTC()
+  const startOfToday = startOfDayInTimeZone(new Date(), ADMIN_TIMEZONE)
   const since = new Date(startOfToday.getTime() - (days - 1) * 24 * 60 * 60 * 1000)
 
+  // `Job.createdAt`/`CreditTransaction.createdAt` son `timestamp without time
+  // zone` (Prisma `DateTime` sin `@db.Timestamptz`) — guardan la hora UTC en
+  // dígitos "ingenuos", sin offset. `"createdAt" AT TIME ZONE 'zona'` sobre un
+  // valor así hace lo CONTRARIO de lo que parece: interpreta esos dígitos
+  // como si ya fueran hora local de esa zona y los convierte A UTC (sumando
+  // el offset en vez de restarlo) — con Monterrey eso desplazaba el corte de
+  // día 6 horas hacia adelante y hacía que el "día" de un job se viera un
+  // día futuro. El idiom correcto para una columna naive-pero-UTC es la
+  // doble conversión: primero `AT TIME ZONE 'UTC'` (naive → timestamptz,
+  // sin tocar el valor) y sólo entonces `AT TIME ZONE zona` (timestamptz →
+  // hora de pared local). Probado en vivo contra la DB real: sin el primer
+  // paso, 27 jobs FREE del mismo día calendario en Monterrey se partían en
+  // dos "días" (21 y 5); con el idiom completo caen en un solo día, 27.
   const [jobRows, purchaseRows] = await Promise.all([
     prisma.$queryRaw<{ day: Date; tier: string; type: string; count: bigint }[]>`
-      SELECT date_trunc('day', "createdAt") as day, tier, type, count(*)::bigint as count
+      SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${ADMIN_TIMEZONE}) as day, tier, type, count(*)::bigint as count
       FROM "Job"
       WHERE "createdAt" >= ${since}
       GROUP BY 1, 2, 3
     `,
     prisma.$queryRaw<{ day: Date; delta: number; count: bigint }[]>`
-      SELECT date_trunc('day', "createdAt") as day, delta, count(*)::bigint as count
+      SELECT date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${ADMIN_TIMEZONE}) as day, delta, count(*)::bigint as count
       FROM "CreditTransaction"
       WHERE "createdAt" >= ${since} AND reason = 'PURCHASE' AND "externalId" IS NOT NULL
       GROUP BY 1, 2
     `,
   ])
 
+  // El resultado de `date_trunc` es un timestamp sin zona (hora de pared
+  // local); el driver lo lee como si fuera UTC, así que `toISOString` ya da
+  // el día calendario correcto sin volver a convertir zona.
+  const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: ADMIN_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+
   const byDay = new Map<string, DaySeriesPoint>()
   for (let i = 0; i < days; i++) {
     const d = new Date(since.getTime() + i * 24 * 60 * 60 * 1000)
-    const key = d.toISOString().slice(0, 10)
+    const key = dayKeyFormatter.format(d)
     byDay.set(key, { date: key, freeUsed: 0, paidJobs: 0, purchases: 0, revenueMxn: 0 })
   }
 
