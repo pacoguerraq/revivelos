@@ -103,7 +103,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ ...s.card, display: 'flex', gap: 24 }}>
+      <div style={{ ...s.card, display: 'flex', flexWrap: 'wrap', gap: '12px 24px' }}>
         <div>
           <div style={s.statLabel}>FREE_TIER_ENABLED</div>
           <div style={{ ...s.statValue, fontSize: '1.1rem', color: FREE_TIER_ENABLED ? '#4A7C59' : '#B84040' }}>
@@ -119,7 +119,9 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {/* `auto-fit`/`minmax` en vez de `1fr 1fr` fijo: se apilan solas en
+          pantallas angostas sin necesitar una media query. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
         <SummaryColumn title="Hoy" d={today} />
         <SummaryColumn title="Ayer" d={yesterday} />
       </div>
@@ -127,7 +129,7 @@ export default async function AdminDashboardPage() {
       {failedToday.length > 0 && (
         <div style={s.card}>
           <div style={s.sectionTitle}>Jobs fallidos hoy ({failedToday.length})</div>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={s.tableWrap}>
             <table style={s.table}>
               <thead>
                 <tr>
@@ -167,7 +169,7 @@ export default async function AdminDashboardPage() {
           </div>
         </div>
 
-        <div style={{ overflowX: 'auto', maxHeight: 400, overflowY: 'auto' }}>
+        <div style={{ ...s.tableWrap, maxHeight: 400, overflowY: 'auto' }}>
           <table style={s.table}>
             <thead>
               <tr>
@@ -197,7 +199,7 @@ export default async function AdminDashboardPage() {
 
       <div style={s.card}>
         <div style={s.sectionTitle}>Compras recientes</div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={s.tableWrap}>
           <table style={s.table}>
             <thead>
               <tr>

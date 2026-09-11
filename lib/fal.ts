@@ -1,4 +1,4 @@
-import { fal } from '@fal-ai/client'
+import { fal, ValidationError } from '@fal-ai/client'
 
 function requireEnv(name: string): string {
   const value = process.env[name]
@@ -69,13 +69,29 @@ export async function uploadToFal(data: Uint8Array, contentType: string): Promis
 // TODO: verificar el nombre exacto de los parámetros de input contra la
 // página de API de cada modelo antes de ir a producción. Los modelos de
 // edición de imagen (nano-banana*) suelen recibir `image_urls: string[]`;
-// los de image-to-video reciben `image_url` en singular. Si fal devuelve
-// 422, el mensaje de validación indica el campo esperado.
+// los de image-to-video reciben `image_url` en singular.
+//
+// `safety_tolerance: '6'` (la menos estricta de la escala 1-6 de nano-banana)
+// — sin esto, el default del modelo es `'4'` y rechaza una fracción real de
+// fotos legítimas (`content_policy_violation` / `no_media_generated`): el
+// contenido central del producto es justo lo que un clasificador de
+// seguridad conservador marca más — retratos de personas reales,
+// frecuentemente ya fallecidas. Confirmado en vivo contra 7 jobs FAILED
+// reales pidiendo el resultado directo a fal (`fal.queue.result`, ver
+// `describeFalFailure` abajo): todos eran rechazos de contenido, no fallas
+// transitorias de fal. No hay evidencia de que subir la tolerancia
+// comprometa la moderación que de verdad importa (contenido no relacionado
+// a fotos familiares) — si en el futuro se ve contenido problemático pasar,
+// bajar este valor, no quitarlo.
+function restoreInput(prompt: string, imageUrl: string) {
+  return { prompt, image_urls: [imageUrl], safety_tolerance: '6' as const }
+}
+
 export async function submitRestore(imageUrl: string, tier: 'FREE' | 'PAID'): Promise<string> {
   const model = tier === 'PAID' ? MODEL_RESTORE_PAID : MODEL_RESTORE_FREE
   const prompt = tier === 'PAID' ? RESTORE_PROMPT_PAID : RESTORE_PROMPT_FREE
   const { request_id } = await fal.queue.submit(model, {
-    input: { prompt, image_urls: [imageUrl] },
+    input: restoreInput(prompt, imageUrl),
     webhookUrl: webhookUrl(),
   })
   return request_id
@@ -92,6 +108,46 @@ export async function submitAnimate(imageUrl: string): Promise<string> {
     webhookUrl: webhookUrl(),
   })
   return request_id
+}
+
+interface JobForFalLookup {
+  type: 'RESTORE' | 'ANIMATE'
+  tier: 'FREE' | 'PAID'
+  stage: 'RESTORING' | 'ANIMATING' | 'DONE'
+  falRequestId: string | null
+}
+
+function resolveFalModel(job: JobForFalLookup): string {
+  if (job.type === 'ANIMATE' && job.stage === 'RESTORING') return MODEL_RESTORE_PAID
+  if (job.type === 'ANIMATE') return MODEL_ANIMATE
+  return job.tier === 'PAID' ? MODEL_RESTORE_PAID : MODEL_RESTORE_FREE
+}
+
+const FAL_ERROR_TYPE_LABELS: Record<string, string> = {
+  content_policy_violation: 'Rechazada por la política de contenido del proveedor de IA (posible rostro real o contenido sensible).',
+  no_media_generated: 'El modelo no generó una imagen para esta foto (casi siempre por la misma política de contenido).',
+}
+
+// El webhook de ERROR de fal solo trae `error: "Unexpected status code: 422"`
+// — sin el motivo real. fal sí guarda el detalle estructurado en el mismo
+// endpoint de resultado que usaríamos en un caso OK (`fal.queue.result`), así
+// que se vuelve a pedir ahí solo para leer el motivo, no para reintentar
+// nada. Si esa llamada no lanza (el resultado sí existe pese al webhook de
+// error, caso no observado en la práctica — ver comentario en `submitRestore`),
+// no hay nada más que hacer: se devuelve el mensaje genérico tal cual.
+export async function describeFalFailure(job: JobForFalLookup, fallback: string): Promise<string> {
+  if (!job.falRequestId) return fallback
+  try {
+    await fal.queue.result(resolveFalModel(job), { requestId: job.falRequestId })
+    return fallback
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      const detail = error.body.detail[0]
+      if (detail?.type && FAL_ERROR_TYPE_LABELS[detail.type]) return FAL_ERROR_TYPE_LABELS[detail.type]
+      if (detail?.msg) return detail.msg
+    }
+    return fallback
+  }
 }
 
 export class UnexpectedPayloadError extends Error { }

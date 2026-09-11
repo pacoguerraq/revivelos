@@ -3,6 +3,7 @@ import type { Job as PrismaJob } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { verifyFalWebhook } from '@/lib/fal-verify'
 import {
+  describeFalFailure,
   extractRestoreImageUrl,
   extractVideoUrl,
   submitAnimate,
@@ -65,7 +66,9 @@ export async function POST(request: NextRequest) {
   }
 
   if (body.status === 'ERROR') {
-    await failJobAndRefund(job.id, body.error ?? 'fal devolvió un error al procesar la foto')
+    const fallback = body.error ?? 'fal devolvió un error al procesar la foto'
+    const reason = await describeFalFailure(job, fallback)
+    await failJobAndRefund(job.id, reason)
     return NextResponse.json({ ok: true })
   }
 

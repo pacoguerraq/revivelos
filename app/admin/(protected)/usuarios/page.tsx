@@ -73,7 +73,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
         <div style={s.sectionTitle}>
           Usuarios ({total})
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={s.tableWrap}>
           <table style={s.table}>
             <thead>
               <tr>
@@ -111,7 +111,7 @@ export default async function AdminUsersPage({ searchParams }: Props) {
           </table>
         </div>
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 16, alignItems: 'center', fontSize: '0.85rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 16, alignItems: 'center', fontSize: '0.85rem' }}>
           {page > 1 && (
             <Link href={`/admin/usuarios?q=${encodeURIComponent(query)}&page=${page - 1}`} style={{ color: '#8A5208' }}>
               ← Anterior

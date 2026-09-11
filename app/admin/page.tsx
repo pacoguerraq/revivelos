@@ -39,11 +39,20 @@ export default async function AdminLoginPage({ searchParams }: Props) {
   const { error } = await searchParams
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-cream)' }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+        background: 'var(--color-cream)',
+      }}
+    >
       <form
         action={login}
         style={{
-          width: 320,
+          width: 'min(320px, 100%)',
           padding: 32,
           background: 'var(--color-warm-white)',
           border: '1px solid var(--color-sepia-100)',

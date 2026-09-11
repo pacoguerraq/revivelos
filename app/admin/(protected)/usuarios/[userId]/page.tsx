@@ -74,7 +74,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
 
       <div style={s.card}>
         <div style={s.sectionTitle}>Historial de transacciones ({transactions.length})</div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={s.tableWrap}>
           <table style={s.table}>
             <thead>
               <tr>
@@ -109,7 +109,7 @@ export default async function AdminUserDetailPage({ params }: Props) {
 
       <div style={s.card}>
         <div style={s.sectionTitle}>Jobs ({jobs.length})</div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={s.tableWrap}>
           <table style={s.table}>
             <thead>
               <tr>

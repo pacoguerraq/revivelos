@@ -10,6 +10,13 @@ export const card: CSSProperties = {
   padding: 16,
 }
 
+// Envoltorio de tablas anchas: scroll horizontal en vez de romper el layout
+// en pantallas angostas — `WebkitOverflowScrolling` da inercia en iOS viejo.
+export const tableWrap: CSSProperties = {
+  overflowX: 'auto',
+  WebkitOverflowScrolling: 'touch',
+}
+
 export const table: CSSProperties = {
   width: '100%',
   borderCollapse: 'collapse',

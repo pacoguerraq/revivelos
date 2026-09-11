@@ -9,10 +9,11 @@ async function logout() {
   redirect('/admin')
 }
 
-// Nada de UI aquí es cálida ni mobile-first a propósito — es una
-// herramienta interna de una sola persona, vista en escritorio (ver
-// AGENTS.md, sección Admin). Sin cookie válida, 404 — no un 401 que
-// confirme que la ruta existe.
+// No es cálido, pero sí es responsive: el dueño lo revisa a diario y a
+// veces desde el celular (ver AGENTS.md, sección Admin). El header envuelve
+// (`flexWrap`) en vez de recortar cuando el viewport es angosto, y el
+// padding/tamaño de fuente del contenido se achican con `clamp()` en vez de
+// depender de un breakpoint fijo.
 export default async function ProtectedAdminLayout({ children }: { children: React.ReactNode }) {
   if (!(await verifyAdminSession())) notFound()
 
@@ -21,14 +22,16 @@ export default async function ProtectedAdminLayout({ children }: { children: Rea
       <header
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 24px',
+          gap: '8px 16px',
+          padding: '12px clamp(12px, 4vw, 24px)',
           background: '#20160e',
           color: '#fff',
         }}
       >
-        <nav style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+        <nav style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', alignItems: 'center' }}>
           <strong>Admin Revívelos</strong>
           <Link href="/admin/dashboard" style={{ color: '#EDE0CC' }}>
             Dashboard
@@ -46,7 +49,7 @@ export default async function ProtectedAdminLayout({ children }: { children: Rea
           </button>
         </form>
       </header>
-      <main style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>{children}</main>
+      <main style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: 1200, margin: '0 auto' }}>{children}</main>
     </div>
   )
 }
