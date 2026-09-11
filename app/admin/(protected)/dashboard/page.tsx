@@ -49,43 +49,6 @@ function SummaryColumn({ title, d }: { title: string; d: DaySummary }) {
   )
 }
 
-// Gráfica de barras simple en SVG inline, sin librerías (ver instrucción
-// explícita del pedido).
-function MiniBarChart({
-  points,
-  pick,
-  color,
-  height = 60,
-}: {
-  points: { date: string; value: number }[]
-  pick: (p: { date: string; value: number }) => number
-  color: string
-  height?: number
-}) {
-  const max = Math.max(1, ...points.map(pick))
-  const barWidth = 100 / points.length
-  return (
-    <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{ width: '100%', height, display: 'block' }}>
-      {points.map((p, i) => {
-        const value = pick(p)
-        const barHeight = (value / max) * (height - 2)
-        return (
-          <rect
-            key={p.date}
-            x={i * barWidth + barWidth * 0.15}
-            y={height - barHeight}
-            width={barWidth * 0.7}
-            height={barHeight}
-            fill={color}
-          >
-            <title>{`${p.date}: ${value}`}</title>
-          </rect>
-        )
-      })}
-    </svg>
-  )
-}
-
 export default async function AdminDashboardPage() {
   // Repetido a propósito respecto al layout: Next.js puede empezar a
   // renderizar page y layout en paralelo, así que un notFound() solo en el
@@ -154,21 +117,6 @@ export default async function AdminDashboardPage() {
 
       <div style={s.card}>
         <div style={s.sectionTitle}>Últimos 30 días</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16, marginBottom: 16 }}>
-          <div>
-            <div style={s.statLabel}>Free tier usado</div>
-            <MiniBarChart points={series.map((p) => ({ date: p.date, value: p.freeUsed }))} pick={(p) => p.value} color="#C9A87C" />
-          </div>
-          <div>
-            <div style={s.statLabel}>Jobs de pago</div>
-            <MiniBarChart points={series.map((p) => ({ date: p.date, value: p.paidJobs }))} pick={(p) => p.value} color="#A8640A" />
-          </div>
-          <div>
-            <div style={s.statLabel}>Ingreso (MXN)</div>
-            <MiniBarChart points={series.map((p) => ({ date: p.date, value: p.revenueMxn }))} pick={(p) => p.value} color="#4A7C59" />
-          </div>
-        </div>
-
         <div style={{ ...s.tableWrap, maxHeight: 400, overflowY: 'auto' }}>
           <table style={s.table}>
             <thead>
