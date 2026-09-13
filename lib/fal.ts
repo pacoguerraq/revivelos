@@ -17,6 +17,14 @@ const MODEL_RESTORE_PAID = requireEnv('FAL_MODEL_RESTORE_PAID')
 const MODEL_RESTORE_FREE = requireEnv('FAL_MODEL_RESTORE_FREE')
 const MODEL_ANIMATE = requireEnv('FAL_MODEL_ANIMATE')
 
+// Experimento temporal: usar el modelo y prompt de pago también para el
+// free tier (la marca de agua sigue aplicándose igual, por tier, en el
+// webhook — esto no la afecta). Sube el costo por preview gratis de
+// ~$0.87 a ~$3.33 MXN (ver AGENTS.md, "Economía del producto") — activar
+// solo mientras se evalúa si mejora la conversión, no dejar encendido
+// indefinidamente sin volver a hacer esa cuenta.
+const FREE_TIER_USE_PRO_MODEL = process.env.FREE_TIER_USE_PRO_MODEL === 'true'
+
 // Prompts validados a mano contra 5 fotos reales — ver AGENTS.md.
 // No cambiar sin volver a validar contra el mismo set.
 export const RESTORE_PROMPT_PAID = `Restore and colorize this damaged photograph.
@@ -87,9 +95,13 @@ function restoreInput(prompt: string, imageUrl: string) {
   return { prompt, image_urls: [imageUrl], safety_tolerance: '6' as const }
 }
 
+function useProModel(tier: 'FREE' | 'PAID'): boolean {
+  return tier === 'PAID' || FREE_TIER_USE_PRO_MODEL
+}
+
 export async function submitRestore(imageUrl: string, tier: 'FREE' | 'PAID'): Promise<string> {
-  const model = tier === 'PAID' ? MODEL_RESTORE_PAID : MODEL_RESTORE_FREE
-  const prompt = tier === 'PAID' ? RESTORE_PROMPT_PAID : RESTORE_PROMPT_FREE
+  const model = useProModel(tier) ? MODEL_RESTORE_PAID : MODEL_RESTORE_FREE
+  const prompt = useProModel(tier) ? RESTORE_PROMPT_PAID : RESTORE_PROMPT_FREE
   const { request_id } = await fal.queue.submit(model, {
     input: restoreInput(prompt, imageUrl),
     webhookUrl: webhookUrl(),
@@ -120,7 +132,7 @@ interface JobForFalLookup {
 function resolveFalModel(job: JobForFalLookup): string {
   if (job.type === 'ANIMATE' && job.stage === 'RESTORING') return MODEL_RESTORE_PAID
   if (job.type === 'ANIMATE') return MODEL_ANIMATE
-  return job.tier === 'PAID' ? MODEL_RESTORE_PAID : MODEL_RESTORE_FREE
+  return useProModel(job.tier) ? MODEL_RESTORE_PAID : MODEL_RESTORE_FREE
 }
 
 const FAL_ERROR_TYPE_LABELS: Record<string, string> = {

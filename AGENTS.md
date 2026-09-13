@@ -222,6 +222,7 @@ components/
 | Metadatos y compartir (OG/Twitter, robots, sitemap, manifest, JSON-LD) | **Funcionando** — imagen de compartir estática (`app/opengraph-image.png`, convención de archivo, sin `next/og`), título único por página vía `title.template`, `FAQPage` derivado de `FAQ_ITEMS` sin duplicar |
 | Rate limiting, validación de archivos, cabeceras de seguridad/CSP | **Funcionando** — ver sección "Seguridad" más abajo. Probado en vivo: bloqueo real a la 5ta foto/hora por IP, al 4to magic link/hora al mismo correo, y rechazo de un archivo con extensión `.jpg` que no era una foto real |
 | Tope diario del free tier | **Funcionando** — `FREE_TIER_DAILY_CAP` (default 200) + kill switch `FREE_TIER_ENABLED`, ver sección "Seguridad" más abajo. Probado en vivo con cap=2: 3er intento del día lanza `FreeTierUnavailableError`, un usuario con crédito sigue procesando PAID sin problema |
+| Calidad del free tier — experimento modelo pro | **Agregado (2026-09-12), apagado por default** — `FREE_TIER_USE_PRO_MODEL=true` hace que el free tier use `fal-ai/nano-banana-pro/edit` + `RESTORE_PROMPT_PAID` en vez del modelo/prompt baratos (`lib/fal.ts` → `submitRestore`/`useProModel`), sin tocar tier/marca de agua/costo-en-créditos (siguen siendo FREE + watermark). Motivo: cientos de free tiers usados en campaña real, cero compras — hipótesis de que la calidad del preview barato desincentiva la compra. Sube el costo por preview de ~$0.87 a ~$3.33 MXN (~4x) — pensado como prueba acotada mientras se observa conversión, no para dejarse encendido indefinidamente sin revisar el impacto en el presupuesto de free tier de la sección "Economía del producto". Apagar de nuevo (`false`) revierte al comportamiento anterior sin deploy. |
 | Páginas de error/carga, CTA fijo móvil, alt text real, analítica (Vercel Analytics + Speed Insights), Pixel de Meta, accesibilidad, `next/image` en landing, SEO (landings por servicio, `/acerca`, `llms.txt`, canonical, sitemap) | **Funcionando** — ver detalle abajo |
 | Contenido legal adicional (aviso de IA, retiro de contenido, jurisdicción, Pixel en privacidad, garantía de reembolso visible, espacio de logos de pago) | **Funcionando como borrador**, misma salvedad de revisión legal que el resto de `/privacidad` `/terminos` `/reembolsos` |
 
@@ -692,6 +693,7 @@ NEXT_PUBLIC_BASE_URL=       # usada para construir el webhookUrl que se le pasa 
 
 FREE_TIER_DAILY_CAP=200     # tope de previews gratis por día calendario UTC; default 200 si se omite. Ver sección "Seguridad"
 FREE_TIER_ENABLED=true      # kill switch de emergencia — cualquier valor distinto a 'false' cuenta como activado
+FREE_TIER_USE_PRO_MODEL=false  # experimento temporal: 'true' usa el modelo/prompt de pago también en el free tier (marca de agua intacta). Sube el costo por preview gratis ~4x (~$0.87→$3.33 MXN). Ver lib/fal.ts
 
 ADMIN_PASSWORD=             # contraseña de /admin — auth propia, no Auth.js (ver sección "Panel de administración"). Sin esto, /admin y /api/admin/* no existen (404). Generar un valor distinto para producción, nunca reusar el de dev.
 ```
