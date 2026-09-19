@@ -26,9 +26,12 @@ const cspHeader = `
   object-src 'none';
   base-uri 'self';
   form-action 'self';
-  frame-ancestors ${isDev ? "*" : "'none'"};
+  frame-ancestors *;
   upgrade-insecure-requests;
 `;
+// TEMPORAL — revertir a frame-ancestors 'none' + restaurar X-Frame-Options: DENY
+// abajo en cuanto termine la prueba de amiresponsive.com. No dejar esto en
+// producción: reabre clickjacking en un sitio con checkout real.
 
 const nextConfig: NextConfig = {
   // Sin esto, Next.js bloquea los recursos de dev (chunks JS, HMR) para
@@ -54,12 +57,10 @@ const nextConfig: NextConfig = {
           },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // Redundante con frame-ancestors 'none' de la CSP, pero cubre
-          // navegadores viejos que no soportan esa directiva. Omitido en
-          // dev cuando frame-ancestors se relaja temporalmente — X-Frame-Options
-          // no soporta wildcards, así que dejarlo en DENY bloquearía el
-          // framing igual aunque la CSP ya lo permita.
-          ...(isDev ? [] : [{ key: "X-Frame-Options", value: "DENY" }]),
+          // TEMPORAL: X-Frame-Options: DENY quitado junto con frame-ancestors
+          // arriba para permitir el iframe de amiresponsive.com — X-Frame-Options
+          // no soporta wildcards, así que dejarlo en DENY bloquearía el framing
+          // igual aunque la CSP ya lo permita. Restaurar ambos juntos.
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
