@@ -26,7 +26,7 @@ const cspHeader = `
   object-src 'none';
   base-uri 'self';
   form-action 'self';
-  frame-ancestors 'none';
+  frame-ancestors ${isDev ? "*" : "'none'"};
   upgrade-insecure-requests;
 `;
 
@@ -55,8 +55,11 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           // Redundante con frame-ancestors 'none' de la CSP, pero cubre
-          // navegadores viejos que no soportan esa directiva.
-          { key: "X-Frame-Options", value: "DENY" },
+          // navegadores viejos que no soportan esa directiva. Omitido en
+          // dev cuando frame-ancestors se relaja temporalmente — X-Frame-Options
+          // no soporta wildcards, así que dejarlo en DENY bloquearía el
+          // framing igual aunque la CSP ya lo permita.
+          ...(isDev ? [] : [{ key: "X-Frame-Options", value: "DENY" }]),
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
